@@ -141,52 +141,79 @@ def compute_action(
     indices: list[int],
 ) -> dict:
     """
-    最適な推奨アクション (時間軸・方向・ターゲット・ストップ) を算出。
-    最も勝率が高い (50%から最も離れた) 時間軸を推奨する。
+    推奨アクション (時間軸・方向・ターゲット・ストップ) を算出。
+    短期 1〜7 日 (1日後・1週間後) の中で最もエッジが高い時間軸を選定する。
     """
     current_price = float(close.iloc[-1])
     prices        = close.values
 
+    # 短期 1〜7 営業日のみ対象 (1時間後・4時間後の日中足は除外)
+    SHORT_TERM_MIN_DAYS = 1
+    SHORT_TERM_MAX_DAYS = 7
+    short_term = [r for r in win_rates
+                  if SHORT_TERM_MIN_DAYS <= r["days"] <= SHORT_TERM_MAX_DAYS]
+    candidates  = short_term if short_term else win_rates
+
     # 最大エッジの時間軸を選定
-    best = max(win_rates, key=lambda x: abs(x["buy_pct"] - 50))
+    best = max(candidates, key=lambda x: abs(x["buy_pct"] - 50))
     is_long   = best["buy_pct"] >= 50
     edge      = abs(best["buy_pct"] - 50)
     win_pct   = best["buy_pct"] if is_long else best["sell_pct"]
 
     # 類似パターン後の値動き統計でターゲット・ストップを計算
     horizon_int = max(1, round(best["days"]))
-    gains, losses = [], []
+    end_rets, max_favs, max_adv_list = [], [], []
 
     for idx in indices:
         end_idx = idx + horizon_int
         if end_idx >= len(prices):
             continue
-        # 区間内の最大値・最小値
+        p0      = prices[idx]
         segment = prices[idx: end_idx + 1]
-        max_move = (segment.max() - prices[idx]) / prices[idx]
-        min_move = (segment.min() - prices[idx]) / prices[idx]
-        gains.append(max_move)
-        losses.append(min_move)
 
-    avg_gain  = float(np.mean(gains))  if gains  else 0.003
-    avg_loss  = float(np.mean(losses)) if losses else -0.003
-    max_gain  = float(np.percentile(gains,  25)) if gains  else avg_gain
-    max_loss  = float(np.percentile(losses, 75)) if losses else avg_loss
+        # 終値リターン (勝ち/負け判定と期待値に使う)
+        end_ret = (prices[end_idx] - p0) / p0
+        end_rets.append(end_ret)
+
+        # 有利方向の最大到達幅 (利確目標の根拠)
+        if is_long:
+            max_fav = (segment.max() - p0) / p0
+            max_adv = (p0 - segment.min()) / p0   # 逆行幅 (正値)
+        else:
+            max_fav = (p0 - segment.min()) / p0
+            max_adv = (segment.max() - p0) / p0
+        max_favs.append(max_fav)
+        max_adv_list.append(max_adv)
+
+    arr_ret  = np.array(end_rets)       if end_rets       else np.array([0.003])
+    arr_fav  = np.array(max_favs)       if max_favs       else np.array([0.003])
+    arr_adv  = np.array(max_adv_list)   if max_adv_list   else np.array([0.003])
+
+    # ターゲット: 有利方向の平均到達幅 (上位50%中央値)
+    avg_fav_ret  = float(np.median(arr_fav))
+    best25_fav   = float(np.percentile(arr_fav, 75))   # 上位25%の到達幅
+
+    # ストップ: 逆行幅の平均 + 1σ (ATR相当)
+    avg_adv_ret  = float(np.mean(arr_adv))
+    stop_adv_ret = float(np.mean(arr_adv) + np.std(arr_adv))
+
+    # 期待損益
+    hist_avg_ret = float(np.mean(arr_ret))
 
     if is_long:
-        target_price = current_price * (1 + abs(avg_gain))
-        stop_price   = current_price * (1 + avg_loss)      # avg_loss は負
-        hist_avg     = avg_gain * current_price
-        max_reached  = max_gain * current_price
-        avg_adverse  = abs(avg_loss) * current_price
-        max_adverse  = abs(max_loss) * current_price
+        target_price = current_price * (1 + avg_fav_ret)
+        stop_price   = current_price * (1 - stop_adv_ret)
+        hist_avg     = hist_avg_ret * current_price
+        max_reached  = best25_fav * current_price
+        avg_adverse  = avg_adv_ret * current_price
+        max_adverse  = stop_adv_ret * current_price
     else:
-        target_price = current_price * (1 - abs(avg_gain))
-        stop_price   = current_price * (1 + abs(avg_loss))
-        hist_avg     = -avg_gain * current_price
-        max_reached  = -max_gain * current_price
-        avg_adverse  = abs(avg_loss) * current_price
-        max_adverse  = abs(max_loss) * current_price
+        target_price = current_price * (1 - avg_fav_ret)
+        stop_price   = current_price * (1 + stop_adv_ret)
+        hist_avg     = -hist_avg_ret * current_price
+        max_reached  = best25_fav * current_price
+        avg_adverse  = avg_adv_ret * current_price
+        max_adverse  = stop_adv_ret * current_price
 
     direction = "ロング(買い)" if is_long else "ショート(売り)"
 
