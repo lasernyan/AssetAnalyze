@@ -1,0 +1,427 @@
+/* ── Reset & Base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep:      #0b1220;
+  --bg-card:      #131e2e;
+  --bg-card2:     #1a2840;
+  --bg-inner:     #0f1929;
+  --border:       #243552;
+  --border-glow:  #2a4a7f;
+  --cyan:         #00d4ff;
+  --cyan-dim:     #0099bb;
+  --green:        #00e676;
+  --green-dim:    #00a855;
+  --orange:       #ff6d00;
+  --orange-dim:   #cc5500;
+  --red:          #ff3d3d;
+  --purple:       #9c27b0;
+  --purple-light: #ce93d8;
+  --yellow:       #ffd740;
+  --text-primary: #e8f0fe;
+  --text-dim:     #7a9cc8;
+  --text-muted:   #4a6180;
+  --radius:       12px;
+  --radius-sm:    8px;
+}
+
+html { font-size: 14px; }
+body {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: 'Noto Sans JP', 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  padding-bottom: 40px;
+}
+
+a { color: var(--cyan); text-decoration: none; }
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 3px; }
+
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.app-header {
+  background: linear-gradient(90deg, #0b1220 0%, #111d30 50%, #0b1220 100%);
+  border-bottom: 1px solid var(--border-glow);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 20px rgba(0,150,255,0.1);
+}
+
+.app-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--cyan);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.symbol-selector {
+  flex: 1;
+  max-width: 320px;
+  background: var(--bg-card2);
+  border: 1px solid var(--border-glow);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+}
+.symbol-selector:focus { border-color: var(--cyan); }
+
+.header-badge {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  background: var(--bg-inner);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.refresh-btn {
+  background: linear-gradient(135deg, #1565c0, #0d47a1);
+  border: 1px solid var(--border-glow);
+  color: var(--text-primary);
+  padding: 6px 16px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.refresh-btn:hover { background: linear-gradient(135deg, #1976d2, #1565c0); }
+
+.main-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 14px 20px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, var(--bg-card2) 0%, var(--bg-card) 100%);
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.card-body { padding: 16px 20px; }
+
+/* ── Panel 1: フラクタル解析 ────────────────────────────────────────────── */
+.fractal-card .card-header {
+  background: linear-gradient(90deg, #1a1040 0%, var(--bg-card) 100%);
+}
+
+.fractal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 32px;
+  padding: 16px 20px;
+}
+
+.fractal-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.fractal-flag { font-size: 1.1rem; min-width: 24px; }
+.fractal-label {
+  color: var(--text-dim);
+  min-width: 40px;
+  font-size: 0.9rem;
+}
+.fractal-colon { color: var(--text-muted); }
+
+.fractal-icon { font-size: 1rem; }
+.fractal-sentiment {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.fractal-sentiment.bullish  { color: var(--cyan); }
+.fractal-sentiment.bearish  { color: var(--orange); }
+.fractal-sentiment.neutral  { color: var(--text-dim); }
+.fractal-sentiment.alert    { color: var(--red); }
+
+.fractal-footer {
+  margin: 0 20px 16px;
+  background: linear-gradient(90deg, #1a0a40, #2a1060);
+  border: 1px solid #4a2080;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+.fractal-footer .count-highlight {
+  color: var(--orange);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+/* ── Panel 2: 統計勝率予測 ──────────────────────────────────────────────── */
+.winrate-card .card-header {
+  background: linear-gradient(90deg, #1a2040 0%, var(--bg-card) 100%);
+}
+
+.winrate-info {
+  background: var(--bg-inner);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.winrate-info strong { color: var(--cyan); }
+
+.winrate-row { margin-bottom: 18px; }
+
+.winrate-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.winrate-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.winrate-buy  { font-size: 0.9rem; font-weight: 700; color: var(--green); }
+.winrate-sell { font-size: 0.9rem; font-weight: 700; color: var(--orange); }
+
+.winrate-bar-track {
+  width: 100%;
+  height: 10px;
+  background: #1a2840;
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+}
+
+.winrate-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #00c853, #00e676);
+  transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+  position: relative;
+}
+.winrate-bar-fill::after {
+  content: '';
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: rgba(255,255,255,0.6);
+  border-radius: 0 5px 5px 0;
+}
+
+.winrate-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0 16px;
+}
+
+/* ── Panel 3: 推奨アクション ────────────────────────────────────────────── */
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.action-box {
+  background: var(--bg-inner);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+}
+
+.action-box-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.action-main-text {
+  font-size: 1.5rem;
+  font-weight: 900;
+  text-align: center;
+  line-height: 1.2;
+  margin-bottom: 12px;
+}
+.action-main-text.long  { color: var(--cyan); }
+.action-main-text.short { color: var(--orange); }
+
+.action-price {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--yellow);
+  text-align: center;
+}
+.action-price-unit {
+  font-size: 1rem;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+.action-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+.action-sub-val { font-size: 0.8rem; color: var(--text-dim); }
+.action-stat { display: flex; justify-content: space-between; margin-top: 4px; }
+
+.win-pct-badge {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+.win-pct-badge .pct { color: var(--green); font-weight: 700; font-size: 1rem; }
+.win-pct-badge .edge-val { color: var(--orange); font-weight: 700; }
+
+/* ── Panel 4: 未来軌道 ──────────────────────────────────────────────────── */
+.trajectory-card {
+  border: 1px solid var(--cyan-dim);
+  box-shadow: 0 0 20px rgba(0,180,220,0.08);
+}
+
+.trajectory-card .card-header {
+  background: linear-gradient(90deg, #0d2030 0%, var(--bg-card) 100%);
+  border-bottom-color: var(--cyan-dim);
+}
+
+.trajectory-tabs {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.traj-tab {
+  background: var(--bg-inner);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.traj-tab:hover { border-color: var(--cyan); color: var(--cyan); }
+.traj-tab.active {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: #000;
+  font-weight: 700;
+}
+
+.trajectory-desc {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.trajectory-desc span { color: var(--green); }
+.trajectory-desc span.down { color: var(--red); }
+
+#trajectoryChart {
+  width: 100% !important;
+  height: 280px !important;
+}
+
+/* ── Loading / Error ──────────────────────────────────────────────────────── */
+.loading-overlay {
+  position: fixed; inset: 0;
+  background: rgba(11,18,32,0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  gap: 16px;
+  transition: opacity 0.3s;
+}
+.loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+.spinner {
+  width: 48px; height: 48px;
+  border: 4px solid var(--border);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-text { color: var(--cyan); font-size: 0.9rem; }
+
+.error-banner {
+  background: rgba(255,61,61,0.1);
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  color: var(--red);
+  font-size: 0.85rem;
+  display: none;
+}
+.error-banner.visible { display: block; }
+
+/* ── Technical mini-metrics strip ────────────────────────────────────────── */
+.metrics-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-inner);
+}
+
+.metric-chip {
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  display: flex;
+  gap: 6px;
+}
+.metric-chip .mc-label { color: var(--text-muted); }
+.metric-chip .mc-val   { color: var(--text-primary); font-weight: 600; }
+.metric-chip .mc-val.green  { color: var(--green); }
+.metric-chip .mc-val.red    { color: var(--red); }
+.metric-chip .mc-val.orange { color: var(--orange); }
+.metric-chip .mc-val.cyan   { color: var(--cyan); }
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .action-grid { grid-template-columns: 1fr; }
+  .fractal-grid { grid-template-columns: 1fr; gap: 4px; }
+  .app-header { flex-wrap: wrap; }
+}

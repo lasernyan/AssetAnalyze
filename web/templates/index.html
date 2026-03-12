@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>マルチアセット売買指標ダッシュボード</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <span class="loading-text">データ取得中...</span>
+</div>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header class="app-header">
+  <span class="app-title">📊 マルチアセット売買指標</span>
+
+  <select class="symbol-selector" id="symbolSelect">
+    {% for s in symbol_list %}
+    <option value="{{ s.symbol }}"
+      {% if s.symbol == 'JPY=X' %}selected{% endif %}>
+      {{ s.name }}
+    </option>
+    {% endfor %}
+  </select>
+
+  <span class="header-badge" id="headerBadge">―</span>
+  <button class="refresh-btn" id="refreshBtn">🔄 更新</button>
+</header>
+
+<div class="main-content">
+  <!-- Error banner -->
+  <div class="error-banner" id="errorBanner"></div>
+
+  <!-- ── Panel 1: フラクタル解析 ───────────────────────────────────────── -->
+  <div class="card fractal-card">
+    <div class="card-header">
+      <span>📗</span>
+      <span class="card-title">究極のフラクタル解析 (三位一体)</span>
+    </div>
+
+    <div class="fractal-grid" id="fractalGrid">
+      <!-- filled by JS -->
+      <div class="fractal-item"><span class="fractal-flag">🇺🇸</span><span class="fractal-label">株価</span><span class="fractal-colon">:</span><span class="fractal-sentiment neutral">読込中...</span></div>
+      <div class="fractal-item"><span class="fractal-flag">🇯🇵</span><span class="fractal-label">日経</span><span class="fractal-colon">:</span><span class="fractal-sentiment neutral">読込中...</span></div>
+      <div class="fractal-item"><span class="fractal-flag">🇺🇸</span><span class="fractal-label">金利</span><span class="fractal-colon">:</span><span class="fractal-sentiment neutral">読込中...</span></div>
+      <div class="fractal-item"><span class="fractal-flag">🔷</span><span class="fractal-label">資源</span><span class="fractal-colon">:</span><span class="fractal-sentiment neutral">読込中...</span></div>
+      <div class="fractal-item"><span class="fractal-flag">🥇</span><span class="fractal-label">金</span><span class="fractal-colon">:</span><span class="fractal-sentiment neutral">読込中...</span></div>
+      <div class="fractal-item"><span class="fractal-flag">😱</span><span class="fractal-label">心理</span><span class="fractal-colon">:</span><span class="fractal-sentiment neutral">読込中...</span></div>
+    </div>
+
+    <div class="fractal-footer" id="fractalFooter">
+      過去 <span class="count-highlight">―</span> 営業日から完全合致する <span class="count-highlight">―</span> 日を抽出
+    </div>
+  </div>
+
+  <!-- ── Panel 2: 統計勝率予測 ─────────────────────────────────────────── -->
+  <div class="card winrate-card">
+    <div class="card-header">
+      <span>📊</span>
+      <span class="card-title">全時間軸 統計勝率予測 (Ver8.0)</span>
+    </div>
+    <div class="card-body">
+      <div class="winrate-info">
+        <strong>【時間軸別・勝率グラデーション】</strong><br>
+        短期（1〜4時間後）は直近のテクニカル波形から、中長期（1日〜1年後）は過去全履歴の
+        パラレルワールドから勝率を算出しています。時間軸ごとの優位性の変化（グラデーション）から、
+        大局的なトレンドの波を読み取ってください。
+      </div>
+      <div id="winRateRows">
+        <!-- filled by JS -->
+        <div class="winrate-row" style="color:var(--text-muted);text-align:center;padding:20px">読込中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Panel 3: 推奨アクション ───────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span>⚡</span>
+      <span class="card-title">推奨アクション &amp; リスク管理</span>
+    </div>
+    <div class="card-body">
+      <div class="action-grid">
+
+        <!-- 推奨アクション -->
+        <div class="action-box">
+          <div class="action-box-label">推奨アクション</div>
+          <div class="action-main-text long" id="actionText">読込中...</div>
+          <div class="win-pct-badge" id="actionWinBadge">―</div>
+        </div>
+
+        <!-- ターゲット -->
+        <div class="action-box">
+          <div class="action-box-label">🎯 ターゲット(利確)</div>
+          <div id="targetPrice">
+            <div class="action-price">―</div>
+          </div>
+        </div>
+
+        <!-- ストップ -->
+        <div class="action-box">
+          <div class="action-box-label">🛡️ ストップ(撤退)</div>
+          <div id="stopPrice">
+            <div class="action-price">―</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- テクニカル指標チップ -->
+      <div class="metrics-strip" id="metricsStrip">
+        <div class="metric-chip"><span class="mc-label">読込中</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Panel 4: AI未来軌道予測 ──────────────────────────────────────── -->
+  <div class="card trajectory-card">
+    <div class="card-header">
+      <span>🔮</span>
+      <span class="card-title">AI未来軌道予測 (Future Trajectory)</span>
+      <div class="trajectory-tabs" style="margin-left:auto">
+        <button class="traj-tab" data-window="全体">🌐 全体</button>
+        <button class="traj-tab" data-window="24h">🕐 24時間</button>
+        <button class="traj-tab active" data-window="5d">📅 1週間</button>
+        <button class="traj-tab" data-window="1m">🌙 1ヶ月</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <p class="trajectory-desc">
+        抽出された歴史的パラレルワールドから、未来の予想価格軌道を時間軸ごとに詳細に描画します。
+        現在価格より上なら<span>緑</span>、下なら<span class="down">赤</span>の点が点灯します。
+      </p>
+      <canvas id="trajectoryChart"></canvas>
+    </div>
+  </div>
+
+</div><!-- /main-content -->
+
+<script src="/static/js/dashboard.js"></script>
+
+</body>
+</html>
