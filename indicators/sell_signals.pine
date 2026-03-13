@@ -36,85 +36,64 @@ show11 = input.bool(true, "11. 波高い線")
 show12 = input.bool(true, "12. 陰線五本")
 
 // ============================================================
-// 1. 首吊り線（ハンギングマン）
+// パターン検出
 // ============================================================
-kubitsuri = lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0 and totalRange > 0 and (math.min(open, close) - low) / totalRange > 0.55 and isUptrend
-plotshape(show1 and kubitsuri, title="首吊り線", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0), text="①\n首吊線", textcolor=color.white, size=size.small)
+s1  = lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0 and totalRange > 0 and (math.min(open, close) - low) / totalRange > 0.55 and isUptrend
+s2  = isBear and isBear[1] and isBear[2] and open < open[1] and open > close[1] and open[1] < open[2] and open[1] > close[2] and close < close[1] and close[1] < close[2] and bodySize > avgBody * 0.8 and bodySize[1] > avgBody * 0.8 and bodySize[2] > avgBody * 0.8 and isUptrend
+s3d = math.abs(close[1] - open[1]) < avgRange * 0.1
+s3  = isBull[2] and s3d and low[1] > high[2] and isBear and close < (open[2] + close[2]) / 2
+s4d = math.abs(close[1] - open[1]) < avgRange * 0.1
+s4  = isBull[2] and s4d and low[1] > high[2] and isBear and high < low[1]
+s5  = isBull[1] and isBull and bodySize[1] > avgBody and open > open[1] and open < close[1] and close < close[1] and close > open[1] and isUptrend
+s6  = isBull[1] and isBear and open >= close[1] and close <= open[1] and bodySize > bodySize[1] and isUptrend
+s7  = isBull[1] and isBear and math.abs(close - close[1]) < avgRange * 0.08 and bodySize > avgBody * 0.7 and bodySize[1] > avgBody * 0.7 and isUptrend
+s8a = isBull[2] and bodySize[2] > avgBody * 1.2
+s8b = isBear[1] and open[1] < close[2] and open[1] > open[2] and close[1] > open[2] and close[1] < close[2]
+s8  = s8a and s8b and isBear and close < open[2] and isUptrend
+s9m = (open[1] + close[1]) / 2
+s9  = isBull[1] and isBear and open > close[1] and close < s9m and close > open[1] and isUptrend
+s10 = isBull[1] and isBear and bodySize[1] > avgBody and open > open[1] and open < close[1] and close > open[1] and close < close[1] and isUptrend
+s11 = upperShadow > bodySize * 2.0 and lowerShadow > bodySize * 2.0 and bodySize < avgBody * 0.5 and totalRange > avgRange * 1.5 and isUptrend
+s12 = isBear and isBear[1] and isBear[2] and isBear[3] and isBear[4] and close < close[1] and close[1] < close[2] and close[2] < close[3] and close[3] < close[4]
 
 // ============================================================
-// 2. 三羽鳥（スリーブラッククロウズ）
+// ラベル表示（label.new でバー価格に直接固定）
 // ============================================================
-sanba = isBear and isBear[1] and isBear[2] and open < open[1] and open > close[1] and open[1] < open[2] and open[1] > close[2] and close < close[1] and close[1] < close[2] and bodySize > avgBody * 0.8 and bodySize[1] > avgBody * 0.8 and bodySize[2] > avgBody * 0.8 and isUptrend
-plotshape(show2 and sanba, title="三羽鳥", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 0), text="②\n三羽鳥", textcolor=color.white, size=size.small)
+if show1 and s1
+    label.new(bar_index, high, "①首吊線", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.red, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 3. 団子天井（宵の明星・イブニングドジスター）
-// ============================================================
-dg3_doji  = math.abs(close[1] - open[1]) < avgRange * 0.1
-dg3_gapU  = low[1] > high[2]
-dangoTop  = isBull[2] and dg3_doji and dg3_gapU and isBear and close < (open[2] + close[2]) / 2
-plotshape(show3 and dangoTop, title="団子天井", style=shape.labeldown, location=location.abovebar, color=color.new(color.orange, 0), text="③\n団子天井", textcolor=color.white, size=size.small)
+if show2 and s2
+    label.new(bar_index, high, "②三羽鳥", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.maroon, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 4. 捨て子線（上げから安値寄り）
-// ============================================================
-sg4_doji  = math.abs(close[1] - open[1]) < avgRange * 0.1
-sg4_gapU  = low[1] > high[2]
-sg4_gapD  = high < low[1]
-sutegoTop = isBull[2] and sg4_doji and sg4_gapU and isBear and sg4_gapD
-plotshape(show4 and sutegoTop, title="捨て子線（天井圏）", style=shape.labeldown, location=location.abovebar, color=color.new(color.purple, 0), text="④\n捨子線天", textcolor=color.white, size=size.small)
+if show3 and s3
+    label.new(bar_index, high, "③団子天井", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.orange, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 5. 陽の陽はらみ（天井圏の陽のはらみ線）
-// ============================================================
-youYouHarami = isBull[1] and isBull and bodySize[1] > avgBody and open > open[1] and open < close[1] and close < close[1] and close > open[1] and isUptrend
-plotshape(show5 and youYouHarami, title="陽の陽はらみ", style=shape.labeldown, location=location.abovebar, color=color.new(color.blue, 0), text="⑤\n陽陽はらみ", textcolor=color.white, size=size.small)
+if show4 and s4
+    label.new(bar_index, high, "④捨子線天", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.purple, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 6. 最後の抱き線／包み線（天井圏）
-// ============================================================
-saigoT = isBull[1] and isBear and open >= close[1] and close <= open[1] and bodySize > bodySize[1] and isUptrend
-plotshape(show6 and saigoT, title="最後の抱き線（天井圏）", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 20), text="⑥\n抱き線天", textcolor=color.white, size=size.small)
+if show5 and s5
+    label.new(bar_index, high, "⑤陽陽はらみ", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.blue, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 7. ツタイの打ち返し（切り返し線・逆撃線）
-// ============================================================
-tsutai = isBull[1] and isBear and math.abs(close - close[1]) < avgRange * 0.08 and bodySize > avgBody * 0.7 and bodySize[1] > avgBody * 0.7 and isUptrend
-plotshape(show7 and tsutai, title="ツタイの打ち返し", style=shape.labeldown, location=location.abovebar, color=color.new(color.teal, 0), text="⑦\n打ち返し", textcolor=color.white, size=size.small)
+if show6 and s6
+    label.new(bar_index, high, "⑥抱き線天", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.red, 20), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 8. 三手放れ寄せ線（スリーインサイドダウン）
-// ============================================================
-sc8_c1 = isBull[2] and bodySize[2] > avgBody * 1.2
-sc8_c2 = isBear[1] and open[1] < close[2] and open[1] > open[2] and close[1] > open[2] and close[1] < close[2]
-sc8_c3 = isBear and close < open[2]
-santeHanare = sc8_c1 and sc8_c2 and sc8_c3 and isUptrend
-plotshape(show8 and santeHanare, title="三手放れ寄せ線", style=shape.labeldown, location=location.abovebar, color=color.new(color.navy, 0), text="⑧\n三手放れ", textcolor=color.white, size=size.small)
+if show7 and s7
+    label.new(bar_index, high, "⑦打ち返し", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.teal, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 9. 下げ足のかぶせ（ダーククラウドカバー）
-// ============================================================
-midC1_sell = (open[1] + close[1]) / 2
-darkCloud  = isBull[1] and isBear and open > close[1] and close < midC1_sell and close > open[1] and isUptrend
-plotshape(show9 and darkCloud, title="下げ足のかぶせ", style=shape.labeldown, location=location.abovebar, color=color.new(color.black, 0), text="⑨\nかぶせ線", textcolor=color.white, size=size.small)
+if show8 and s8
+    label.new(bar_index, high, "⑧三手放れ", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.navy, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 10. 陽の陰はらみ（弱気のはらみ線）
-// ============================================================
-youYinHarami = isBull[1] and isBear and bodySize[1] > avgBody and open > open[1] and open < close[1] and close > open[1] and close < close[1] and isUptrend
-plotshape(show10 and youYinHarami, title="陽の陰はらみ", style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 30), text="⑩\n陽陰はらみ", textcolor=color.white, size=size.small)
+if show9 and s9
+    label.new(bar_index, high, "⑨かぶせ線", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.black, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 11. 波高い線（ハイウェーブキャンドル）
-// ============================================================
-namiTakai = upperShadow > bodySize * 2.0 and lowerShadow > bodySize * 2.0 and bodySize < avgBody * 0.5 and totalRange > avgRange * 1.5 and isUptrend
-plotshape(show11 and namiTakai, title="波高い線", style=shape.labeldown, location=location.abovebar, color=color.new(color.gray, 0), text="⑪\n波高線", textcolor=color.white, size=size.small)
+if show10 and s10
+    label.new(bar_index, high, "⑩陽陰はらみ", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.red, 30), style=label.style_label_down, textcolor=color.white, size=size.small)
 
-// ============================================================
-// 12. 陰線五本
-// ============================================================
-insenGohon = isBear and isBear[1] and isBear[2] and isBear[3] and isBear[4] and close < close[1] and close[1] < close[2] and close[2] < close[3] and close[3] < close[4]
-plotshape(show12 and insenGohon, title="陰線五本", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 20), text="⑫\n陰線五本", textcolor=color.white, size=size.small)
+if show11 and s11
+    label.new(bar_index, high, "⑪波高線", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.gray, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
+
+if show12 and s12
+    label.new(bar_index, high, "⑫陰線五本", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.maroon, 20), style=label.style_label_down, textcolor=color.white, size=size.small)
 
 // ============================================================
 // 背景色
