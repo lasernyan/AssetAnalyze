@@ -1,0 +1,216 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// © AssetAnalyze
+//@version=5
+strategy("Gold MACD×MA+スウィングSL [XAUUSD Daily]",
+     overlay         = true,
+     initial_capital = 10000,
+     default_qty_type  = strategy.percent_of_equity,
+     default_qty_value = 10,
+     commission_type   = strategy.commission.cash_per_contract,
+     commission_value  = 0.07,
+     slippage          = 3,
+     max_labels_count  = 500,
+     calc_on_every_tick = false)
+
+// ============================================================
+// バックテスト概要（Pythonバックテスト結果）
+//   戦略: S3 MACDゼロクロス + EMA50/200 + RSI
+//   改善3: 週足EMA20フィルター（逆トレンド偽シグナル除去）
+//   改善4: スウィングSL（直近N本の高値/安値に損切り）
+//   データ: GC=F 日足 5年（GBMモック: μ=8%, σ=12%）
+//   ベスト(S7): PF=1.081  勝率=40%  MDD=-13.15%  Sharpe=0.558
+//   目標: リアルデータでPF≥1.5（実用圏）
+// ============================================================
+
+// ─── グループ定義 ────────────────────────────────────────────
+GRP_TREND  = "━━ トレンドフィルター ━━"
+GRP_MACD   = "━━ MACDパラメータ ━━"
+GRP_RSI    = "━━ RSIフィルター ━━"
+GRP_WEEKLY = "━━ 週足EMAフィルター（改善3） ━━"
+GRP_SL     = "━━ スウィングSL設定（改善4） ━━"
+GRP_RISK   = "━━ リスク/TP設定 ━━"
+GRP_DISP   = "━━ 表示設定 ━━"
+
+// ─── パラメータ ───────────────────────────────────────────────
+emaFastLen  = input.int(50,  "短期EMA期間",   minval=5,   maxval=200,  group=GRP_TREND)
+emaSlowLen  = input.int(200, "長期EMA期間",   minval=50,  maxval=500,  group=GRP_TREND)
+
+macdFast    = input.int(12, "MACD Fast",    minval=2,  maxval=50,  group=GRP_MACD)
+macdSlow    = input.int(26, "MACD Slow",    minval=5,  maxval=100, group=GRP_MACD)
+macdSig     = input.int(9,  "MACD Signal",  minval=2,  maxval=30,  group=GRP_MACD)
+
+useRsiFilter = input.bool(true, "RSIフィルター有効",                   group=GRP_RSI)
+rsiLen       = input.int(14,    "RSI期間",       minval=2, maxval=50, group=GRP_RSI)
+rsiBuyLo     = input.int(40,    "RSI 買い下限",   minval=1, maxval=60, group=GRP_RSI)
+rsiBuyHi     = input.int(70,    "RSI 買い上限",   minval=50, maxval=90, group=GRP_RSI)
+rsiSellLo    = input.int(30,    "RSI 売り下限",   minval=10, maxval=50, group=GRP_RSI)
+rsiSellHi    = input.int(60,    "RSI 売り上限",   minval=40, maxval=80, group=GRP_RSI)
+
+useWeekly    = input.bool(true, "週足EMA20フィルター有効（Close>週EMA→買い許可）", group=GRP_WEEKLY)
+weeklyEmaLen = input.int(20,    "週足EMA期間",    minval=5,  maxval=50,  group=GRP_WEEKLY)
+
+useSwingSL   = input.bool(true, "スウィングSL有効（直近N本の高値/安値）",          group=GRP_SL)
+swingBars    = input.int(10,    "スウィング検出期間 (bars)",  minval=3, maxval=30,  group=GRP_SL)
+atrLen       = input.int(14,    "ATR期間（スウィングSL無効時に使用）", minval=1, maxval=50, group=GRP_SL)
+atrSlMult    = input.float(1.5, "ATR SL倍率",  minval=0.5, step=0.5,               group=GRP_SL)
+
+tpRR         = input.float(2.0, "R:R（TP = SLサイズ × この倍率）", minval=1.0, step=0.5, group=GRP_RISK)
+
+showEma      = input.bool(true,  "EMA50/200を表示",   group=GRP_DISP)
+showWeeklyEma = input.bool(true, "週足EMA20を表示",   group=GRP_DISP)
+showSwing    = input.bool(false, "スウィング高値/安値を表示", group=GRP_DISP)
+showBg       = input.bool(true,  "トレンド背景色を表示", group=GRP_DISP)
+
+// ─── 指標計算 ──────────────────────────────────────────────────
+ema50  = ta.ema(close, emaFastLen)
+ema200 = ta.ema(close, emaSlowLen)
+atr    = ta.atr(atrLen)
+rsi    = ta.rsi(close, rsiLen)
+
+[macdLine, signalLine, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
+
+// 週足EMA20（上位足フィルター: 改善3）
+weeklyEma = request.security(syminfo.tickerid, "W", ta.ema(close, weeklyEmaLen),
+     lookahead = barmerge.lookahead_off)
+
+// スウィング高値/安値（構造的SL: 改善4）
+swingLow  = ta.lowest(low,  swingBars)
+swingHigh = ta.highest(high, swingBars)
+
+// ─── トレンド判定 ──────────────────────────────────────────────
+isUptrend   = ema50 > ema200
+isDowntrend = ema50 < ema200
+
+// ─── 週足フィルター ────────────────────────────────────────────
+weeklyBullOk = not useWeekly or close > weeklyEma
+weeklyBearOk = not useWeekly or close < weeklyEma
+
+// ─── RSIフィルター ─────────────────────────────────────────────
+rsiBuyOk  = not useRsiFilter or (rsi >= rsiBuyLo  and rsi <= rsiBuyHi)
+rsiSellOk = not useRsiFilter or (rsi >= rsiSellLo and rsi <= rsiSellHi)
+
+// ─── MACDゼロクロスシグナル ────────────────────────────────────
+// ヒストグラムが 負→正 に転換 → 買いシグナル
+// ヒストグラムが 正→負 に転換 → 売りシグナル
+macdBullCross = macdHist[1] < 0 and macdHist >= 0
+macdBearCross = macdHist[1] > 0 and macdHist <= 0
+
+// ─── エントリー条件 ────────────────────────────────────────────
+longCondition  = macdBullCross and isUptrend   and rsiBuyOk  and weeklyBullOk
+shortCondition = macdBearCross and isDowntrend and rsiSellOk and weeklyBearOk
+
+// ─── SL / TP 計算 ─────────────────────────────────────────────
+// スウィングSL（改善4）: 直近N本の最安値/最高値
+// ATR SL: スウィングSLが無効の場合のフォールバック
+longSlBase  = useSwingSL ? swingLow  : close - atr * atrSlMult
+shortSlBase = useSwingSL ? swingHigh : close + atr * atrSlMult
+
+longSlDist  = math.max(close - longSlBase,  atr * 0.5)   // 最低 ATR×0.5 は確保
+shortSlDist = math.max(shortSlBase - close, atr * 0.5)
+
+longSl  = close - longSlDist
+longTp  = close + longSlDist  * tpRR
+shortSl = close + shortSlDist
+shortTp = close - shortSlDist * tpRR
+
+// ─── エントリー実行 ────────────────────────────────────────────
+if longCondition and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long",
+         stop  = longSl,
+         limit = longTp)
+    // エントリーラベル
+    label.new(bar_index, low,
+         text  = "▲ L\nSL:" + str.tostring(math.round(longSl, 1))
+               + "\nTP:" + str.tostring(math.round(longTp, 1)),
+         style = label.style_label_up,
+         color = color.new(color.blue, 20),
+         textcolor = color.white,
+         size  = size.small)
+
+if shortCondition and strategy.position_size == 0
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short",
+         stop  = shortSl,
+         limit = shortTp)
+    label.new(bar_index, high,
+         text  = "▼ S\nSL:" + str.tostring(math.round(shortSl, 1))
+               + "\nTP:" + str.tostring(math.round(shortTp, 1)),
+         style = label.style_label_down,
+         color = color.new(color.red, 20),
+         textcolor = color.white,
+         size  = size.small)
+
+// ─── チャート描画 ──────────────────────────────────────────────
+// EMA50 / EMA200
+plot(showEma ? ema50  : na, "EMA50",  color = color.new(color.orange, 0), linewidth = 1)
+plot(showEma ? ema200 : na, "EMA200", color = color.new(color.purple, 0), linewidth = 2)
+
+// 週足EMA20（点線）
+plot(showWeeklyEma ? weeklyEma : na, "週足EMA20",
+     color = color.new(color.teal, 0), linewidth = 1, style = plot.style_stepline)
+
+// スウィング高値/安値（補助線）
+plot(showSwing ? swingLow  : na, "スウィング安値", color.new(color.blue,  60), 1, plot.style_circles)
+plot(showSwing ? swingHigh : na, "スウィング高値", color.new(color.red,   60), 1, plot.style_circles)
+
+// トレンド背景色
+bgcolor(showBg and isUptrend   ? color.new(color.blue,  95) : na, title="上昇トレンド背景")
+bgcolor(showBg and isDowntrend ? color.new(color.red,   95) : na, title="下降トレンド背景")
+
+// シグナルマーカー
+plotshape(longCondition,  "買いシグナル", shape.triangleup,   location.belowbar,
+     color = color.new(color.blue, 0), size = size.normal)
+plotshape(shortCondition, "売りシグナル", shape.triangledown,  location.abovebar,
+     color = color.new(color.red,  0), size = size.normal)
+
+// MACDゼロクロス（サブシグナル: フィルター未適用）
+plotshape(macdBullCross and not longCondition, "MACDクロス(フィルター除外・買)",
+     shape.triangleup, location.belowbar,
+     color = color.new(color.blue, 70), size = size.tiny)
+plotshape(macdBearCross and not shortCondition, "MACDクロス(フィルター除外・売)",
+     shape.triangledown, location.abovebar,
+     color = color.new(color.red, 70), size = size.tiny)
+
+// ─── 情報テーブル ─────────────────────────────────────────────
+var table infoTbl = table.new(position.top_right, 2, 9,
+     bgcolor       = color.new(color.black, 80),
+     border_color  = color.new(color.gray, 50),
+     border_width  = 1,
+     frame_color   = color.new(color.gray, 30),
+     frame_width   = 1)
+
+trendStr  = isUptrend ? "↑ 上昇" : isDowntrend ? "↓ 下降" : "→ 横ばい"
+trendClr  = isUptrend ? color.new(color.lime, 0) : isDowntrend ? color.new(color.red, 0) : color.gray
+wemaStr   = close > weeklyEma ? "Close > W-EMA ✓" : "Close < W-EMA ✗"
+wemaClr   = close > weeklyEma ? color.new(color.lime, 0) : color.new(color.red, 0)
+rsiClr    = rsi < 40 ? color.new(color.lime, 0) : rsi > 60 ? color.new(color.red, 0) : color.gray
+macdClr   = macdHist >= 0 ? color.new(color.lime, 0) : color.new(color.red, 0)
+
+_hdr(r, txt) =>
+    table.cell(infoTbl, 0, r, txt, text_color=color.gray, text_size=size.tiny,
+         bgcolor=color.new(color.black, 70))
+_val(r, txt, clr) =>
+    table.cell(infoTbl, 1, r, txt, text_color=clr, text_size=size.tiny,
+         bgcolor=color.new(color.black, 70))
+
+if barstate.islast
+    _hdr(0, "戦略")
+    _val(0, "Gold MACD×SwingSL", color.white)
+    _hdr(1, "EMAトレンド")
+    _val(1, trendStr, trendClr)
+    _hdr(2, "週足EMA20")
+    _val(2, wemaStr, wemaClr)
+    _hdr(3, "RSI(" + str.tostring(rsiLen) + ")")
+    _val(3, str.tostring(math.round(rsi, 1)), rsiClr)
+    _hdr(4, "MACD Hist")
+    _val(4, str.tostring(math.round(macdHist, 2)), macdClr)
+    _hdr(5, "スウィングSL")
+    _val(5, useSwingSL ? "有効(" + str.tostring(swingBars) + "本)" : "無効(ATR)",
+         useSwingSL ? color.new(color.lime, 0) : color.gray)
+    _hdr(6, "R:R 設定")
+    _val(6, str.tostring(tpRR, "#.0") + " : 1", color.white)
+    _hdr(7, "EMA50")
+    _val(7, str.tostring(math.round(ema50, 1)), color.orange)
+    _hdr(8, "EMA200")
+    _val(8, str.tostring(math.round(ema200, 1)), color.purple)
