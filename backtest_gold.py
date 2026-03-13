@@ -80,7 +80,25 @@ def prepare_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["ema200"]    = _ema(df["Close"], 200)
     df["sma50"]     = df["Close"].rolling(50).mean()
     df["sma200"]    = df["Close"].rolling(200).mean()
-    return df.dropna(subset=["ema200", "atr", "rsi"])
+
+    # 週足EMA20 (改善3: 上位足トレンドフィルター用)
+    # 日足終値を週次にリサンプリング → EMA20 → 日足に前方補完
+    df_tz = df.copy()
+    if df_tz.index.tz is None:
+        df_tz.index = df_tz.index.tz_localize("UTC")
+    weekly_close    = df_tz["Close"].resample("W").last()
+    weekly_ema20    = _ema(weekly_close, 20)
+    weekly_ema20_d  = weekly_ema20.reindex(df_tz.index, method="ffill")
+    weekly_ema20_d.index = df.index
+    df["weekly_ema20"] = weekly_ema20_d
+
+    # スウィング高値/安値 (改善4: 構造的SL用)
+    # 直近 N 本のローソク足の最安値/最高値
+    SWING_N = 10
+    df["swing_low"]  = df["Low"].rolling(SWING_N).min()
+    df["swing_high"] = df["High"].rolling(SWING_N).max()
+
+    return df.dropna(subset=["ema200", "atr", "rsi", "weekly_ema20", "swing_low"])
 
 
 # ── トレード記録 ──────────────────────────────────────────────────────────────
@@ -156,6 +174,87 @@ def backtest(df: pd.DataFrame, signal_func) -> List[Trade]:
                 else:
                     tp = entry_price - ATR_TP_MULT * atr_v
                     sl = entry_price + ATR_SL_MULT * atr_v
+
+    return trades
+
+
+# ── スウィングSL用バックテストエンジン ────────────────────────────────────────
+
+SWING_TP_RR = 2.0   # スウィングSL版のTP倍率 (SLサイズ × この倍率 = TP距離)
+
+def backtest_swing(df: pd.DataFrame, signal_func) -> List[Trade]:
+    """
+    改善4: スウィング高値/安値ベースのSLを使用するバックテスター。
+    SL = 直近10本の最安値(LONG) or 最高値(SHORT)
+    TP = entry + (entry - SL) × SWING_TP_RR   → 可変R:R
+    """
+    trades: List[Trade] = []
+    in_trade = False
+    direction = entry_price = tp = sl = entry_date = None
+
+    for i in range(WARMUP_BARS, len(df)):
+        row   = df.iloc[i]
+        date  = df.index[i]
+        close = float(row["Close"])
+        high  = float(row["High"])
+        low   = float(row["Low"])
+
+        if in_trade:
+            exit_price = exit_reason = None
+            if direction == "LONG":
+                if high >= tp:
+                    exit_price, exit_reason = tp, "TP"
+                elif low <= sl:
+                    exit_price, exit_reason = sl, "SL"
+                else:
+                    s = signal_func(df, i)
+                    if s == "SHORT":
+                        exit_price, exit_reason = close, "SIGNAL"
+            else:
+                if low <= tp:
+                    exit_price, exit_reason = tp, "TP"
+                elif high >= sl:
+                    exit_price, exit_reason = sl, "SL"
+                else:
+                    s = signal_func(df, i)
+                    if s == "LONG":
+                        exit_price, exit_reason = close, "SIGNAL"
+
+            if exit_price is not None:
+                pnl = ((exit_price - entry_price) / entry_price * 100
+                       if direction == "LONG"
+                       else (entry_price - exit_price) / entry_price * 100)
+                trades.append(Trade(
+                    str(entry_date.date()), str(date.date()),
+                    direction,
+                    round(entry_price, 2), round(exit_price, 2),
+                    exit_reason, round(pnl, 4)
+                ))
+                in_trade = False
+        else:
+            s = signal_func(df, i)
+            if s in ("LONG", "SHORT"):
+                sl_val = (float(row["swing_low"])  if s == "LONG"
+                          else float(row["swing_high"]))
+                # SLが現在値より有利でない場合はスキップ
+                if s == "LONG" and sl_val >= close:
+                    continue
+                if s == "SHORT" and sl_val <= close:
+                    continue
+                sl_dist = abs(close - sl_val)
+                # SLが非現実的に小さい場合はスキップ (< 0.1%)
+                if sl_dist / close < 0.001:
+                    continue
+                in_trade    = True
+                direction   = s
+                entry_price = close
+                entry_date  = date
+                if s == "LONG":
+                    sl = sl_val
+                    tp = close + sl_dist * SWING_TP_RR
+                else:
+                    sl = sl_val
+                    tp = close - sl_dist * SWING_TP_RR
 
     return trades
 
@@ -252,6 +351,38 @@ def signal_dip_buy_long_only(df: pd.DataFrame, i: int) -> Optional[str]:
             and mh > 0):                   # MACDポジティブ
         return "LONG"
 
+    return None
+
+
+def signal_macd_zerocross_weekly(df: pd.DataFrame, i: int) -> Optional[str]:
+    """
+    S6 [改善3]: S3 + 週足EMA20フィルター
+    MACDゼロクロス + EMA50>EMA200 (日足) + Close > 週足EMA20 (LONG)
+    週足EMA20を上位足フィルターとして追加し、逆張り方向の偽シグナルを除外。
+    """
+    mh_c  = df["macd_hist"].iloc[i]
+    mh_p  = df["macd_hist"].iloc[i - 1]
+    e50   = df["ema50"].iloc[i]
+    e200  = df["ema200"].iloc[i]
+    rsi   = df["rsi"].iloc[i]
+    close = df["Close"].iloc[i]
+    wema  = df["weekly_ema20"].iloc[i]
+
+    if any(pd.isna(x) for x in [mh_c, mh_p, e50, e200, rsi, wema]):
+        return None
+
+    # LONG: 週足EMA20より上にある場合のみ (= 週足の上昇トレンド内)
+    if (mh_p < 0 and mh_c >= 0
+            and e50 > e200
+            and 40 <= rsi <= 70
+            and close > wema):          # ← 改善3: 週足フィルター
+        return "LONG"
+    # SHORT: 週足EMA20より下にある場合のみ
+    if (mh_p > 0 and mh_c <= 0
+            and e50 < e200
+            and 30 <= rsi <= 60
+            and close < wema):          # ← 改善3: 週足フィルター
+        return "SHORT"
     return None
 
 
@@ -443,6 +574,7 @@ def main():
     df = prepare_indicators(df_raw)
     print(f"  指標計算後: {len(df)}本  (有効バー: {len(df) - WARMUP_BARS}本)\n")
 
+    # ── フェーズ1: 元の5戦略 ──────────────────────────────────────────────────
     strategies = [
         ("S1: EMA20/50クロス+MACD",        signal_ema_cross_macd),
         ("S2: RSI50クロス+EMAトレンド",      signal_rsi50_cross_ema),
@@ -459,36 +591,69 @@ def main():
 
     print_summary([r[3] for r in results])
 
-    # ベスト戦略のトレード一覧 + パラメータスイープ
-    valid = [(n, f, t, m) for n, f, t, m in results if m["trades"] >= 10]
-    if valid:
-        best = max(valid, key=lambda x: x[3]["profit_factor"])
-        print_trades(best[2], best[0])
-        param_sweep(df, best[1], best[0])
+    # ── フェーズ2: 改善3 & 改善4 の検証 ──────────────────────────────────────
+    sep2 = "═" * 72
+    print(f"\n{sep2}")
+    print("  【改善3】 週足EMA20フィルター追加 vs 【改善4】 スウィングSL")
+    print(f"{sep2}\n")
 
-    # ── 診断レポート ──────────────────────────────────────────────────────────
-    print("  ── 診断レポート ──")
-    best_all = max(results, key=lambda x: x[3]["profit_factor"])
-    bm = best_all[3]
-    rr = ATR_TP_MULT / ATR_SL_MULT
-    min_wr = 100 / (rr + 1)
-    target_wr = 100 * 1.5 / (1.5 + rr)
+    # 改善3: S3 + 週足EMAフィルター (ATRベースSL)
+    trades_s6  = backtest(df, signal_macd_zerocross_weekly)
+    m_s6       = calc_metrics(trades_s6, "S6: S3+週足EMA20フィルター [改善3]")
 
-    print(f"  R:R = {rr:.1f} → PF1.5達成に必要な勝率: {target_wr:.1f}%")
-    print(f"  現状ベスト勝率: {bm['win_rate']}%  (不足: {max(0, target_wr - bm['win_rate']):.1f}pp)")
-    print()
-    print("  【実用圏到達のヒント】")
-    if bm["profit_factor"] < 1.2:
-        print("  ・ショートトレードの除外 (ゴールドは長期的に上昇バイアス)")
-        print("  ・TP/SL比率を TP×4/SL×1.5 に広げる")
-        print("  ・週足トレンドフィルターを追加する")
-    elif bm["profit_factor"] < 1.5:
-        print("  ・現在の戦略はほぼ実用圏。追加フィルターで改善可能")
-        print("  ・ATR倍率の微調整 (TP×3.5/SL×1.5 など)")
-        print("  ・出来高フィルター or VIX相関フィルターの追加")
-    else:
-        print("  ・実用圏到達済み。リアルデータでの追加検証を推奨")
-    print()
+    # 改善4: S3 + スウィング高値/安値SL (可変R:R)
+    trades_s7  = backtest_swing(df, signal_macd_zerocross)
+    m_s7       = calc_metrics(trades_s7, f"S7: S3+スウィングSL(R:R≈{SWING_TP_RR}) [改善4]")
+
+    # 改善3+4 組み合わせ: 週足フィルター + スウィングSL
+    trades_s8  = backtest_swing(df, signal_macd_zerocross_weekly)
+    m_s8       = calc_metrics(trades_s8, "S8: S3+週足EMA+スウィングSL [改善3+4]")
+
+    improvement_results = [m_s6, m_s7, m_s8]
+    # ベースラインS3と並べて比較表示
+    s3_m = next(r[3] for r in results if "S3" in r[0])
+    s3_m_copy = dict(s3_m)
+    s3_m_copy["strategy"] = "S3: ベースライン (比較用)"
+    print_summary([s3_m_copy] + improvement_results)
+
+    # 改善後ベスト戦略のトレード一覧
+    imp_with_trades = [
+        (m_s6, trades_s6),
+        (m_s7, trades_s7),
+        (m_s8, trades_s8),
+    ]
+    valid_imp = [(m, t) for m, t in imp_with_trades if m["trades"] >= 10]
+    if valid_imp:
+        best_imp_m, best_imp_t = max(valid_imp, key=lambda x: x[0]["profit_factor"])
+        print_trades(best_imp_t, best_imp_m["strategy"])
+
+    # ── 最終サマリー ───────────────────────────────────────────────────────────
+    all_results_m = [r[3] for r in results] + improvement_results
+    valid_all = [m for m in all_results_m if m["trades"] >= 10]
+    best_overall = max(valid_all, key=lambda x: x["profit_factor"]) if valid_all else None
+
+    print(f"\n{sep2}")
+    print("  最終サマリー")
+    print(f"{sep2}")
+    print(f"  {'戦略':<38}  {'Trades':>7}  {'勝率':>6}  {'PF':>7}  {'MDD':>7}")
+    print(f"  {'─' * 66}")
+    for m in all_results_m:
+        flag = " ◀ BEST" if best_overall and m["strategy"] == best_overall["strategy"] else ""
+        reach = " 🎯実用圏!" if m["profit_factor"] >= 1.5 else ""
+        print(f"  {m['strategy']:<38}  {m['trades']:>7}  "
+              f"{m['win_rate']:>5.1f}%  {m['profit_factor']:>7.3f}  {m['max_dd']:>6.2f}%"
+              f"{flag}{reach}")
+    print(f"  {'─' * 66}")
+    if best_overall:
+        pf = best_overall["profit_factor"]
+        label = _pf_label(pf)
+        print(f"\n  ▶ 全戦略ベスト: 【{best_overall['strategy']}】")
+        print(f"    PF={pf:.3f}  {label}  勝率={best_overall['win_rate']}%  MDD={best_overall['max_dd']}%")
+        if pf >= 1.5:
+            print(f"\n  ✅ 実用圏 (PF≥1.5) 到達！")
+        else:
+            print(f"\n  ❌ 実用圏未達 (不足={1.5 - pf:.3f})")
+    print(f"{sep2}\n")
 
 
 def param_sweep(df: pd.DataFrame, signal_func, name: str):
