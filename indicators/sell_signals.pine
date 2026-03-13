@@ -57,43 +57,32 @@ s11 = upperShadow > bodySize * 2.0 and lowerShadow > bodySize * 2.0 and bodySize
 s12 = isBear and isBear[1] and isBear[2] and isBear[3] and isBear[4] and close < close[1] and close[1] < close[2] and close[2] < close[3] and close[3] < close[4]
 
 // ============================================================
-// ラベル表示（label.new でバー価格に直接固定）
+// ラベル表示（yloc.abovebar でバー上に相対固定）
 // ============================================================
 if show1 and s1
-    label.new(bar_index, high, "①首吊線", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.red, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "①首吊線", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.red, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show2 and s2
-    label.new(bar_index, high, "②三羽鳥", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.maroon, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "②三羽鳥", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.maroon, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show3 and s3
-    label.new(bar_index, high, "③団子天井", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.orange, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "③団子天井", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.orange, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show4 and s4
-    label.new(bar_index, high, "④捨子線天", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.purple, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "④捨子線天", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.purple, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show5 and s5
-    label.new(bar_index, high, "⑤陽陽はらみ", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.blue, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "⑤陽陽はらみ", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.blue, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show6 and s6
-    label.new(bar_index, high, "⑥抱き線天", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.red, 20), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "⑥抱き線天", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.red, 20), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show7 and s7
-    label.new(bar_index, high, "⑦打ち返し", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.teal, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "⑦打ち返し", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.teal, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show8 and s8
-    label.new(bar_index, high, "⑧三手放れ", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.navy, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "⑧三手放れ", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.navy, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show9 and s9
-    label.new(bar_index, high, "⑨かぶせ線", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.black, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "⑨かぶせ線", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.black, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show10 and s10
-    label.new(bar_index, high, "⑩陽陰はらみ", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.red, 30), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "⑩陽陰はらみ", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.red, 30), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show11 and s11
-    label.new(bar_index, high, "⑪波高線", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.gray, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
-
+    label.new(bar_index, na, "⑪波高線", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.gray, 0), style=label.style_label_down, textcolor=color.white, size=size.small)
 if show12 and s12
-    label.new(bar_index, high, "⑫陰線五本", xloc=xloc.bar_index, yloc=yloc.price, color=color.new(color.maroon, 20), style=label.style_label_down, textcolor=color.white, size=size.small)
+    label.new(bar_index, na, "⑫陰線五本", xloc=xloc.bar_index, yloc=yloc.abovebar, color=color.new(color.maroon, 20), style=label.style_label_down, textcolor=color.white, size=size.small)
 
 // ============================================================
 // 背景色
