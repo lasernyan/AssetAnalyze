@@ -1,0 +1,237 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// © AssetAnalyze
+//@version=5
+indicator("買いサイン（底値圏）インジケーター 12本セット", overlay=true, max_labels_count=500)
+
+// ============================================================
+// ヘルパー変数
+// ============================================================
+bodySize    = math.abs(close - open)
+totalRange  = high - low
+upperShadow = high - math.max(open, close)
+lowerShadow = math.min(open, close) - low
+isBull      = close >= open
+isBear      = close < open
+avgBody     = ta.sma(bodySize, 14)
+avgRange    = ta.sma(totalRange, 14)
+
+// トレンド判定（下降トレンド＝底値圏の条件として使用）
+ema20      = ta.ema(close, 20)
+ema50      = ta.ema(close, 50)
+isDowntrend = ema20 < ema50
+
+// ============================================================
+// 表示ON/OFF切り替え
+// ============================================================
+show1  = input.bool(true,  "1. 陰の陰はらみ")
+show2  = input.bool(true,  "2. 三手大黒線")
+show3  = input.bool(true,  "3. 放れ七手の変化底")
+show4  = input.bool(true,  "4. 最後の抱き線／包み線（底値圏）")
+show5  = input.bool(true,  "5. 二本の差込線")
+show6  = input.bool(true,  "6. 捨て子線（下げから高値寄り）")
+show7  = input.bool(true,  "7. 鍋底")
+show8  = input.bool(true,  "8. 放れ五手黒一本底")
+show9  = input.bool(true,  "9. 連続下げ三手放れ三ツ星")
+show10 = input.bool(true,  "10. 陰の陽はらみ")
+show11 = input.bool(true,  "11. たくり線")
+show12 = input.bool(true,  "12. 陽線五本")
+
+// ============================================================
+// 1. 陰の陰はらみ
+//    大陰線の中に小陰線がすっぽり収まるパターン（下落消耗サイン）
+// ============================================================
+yinYinHarami = isBear[1]
+             and isBear
+             and bodySize[1] > avgBody * 1.0
+             and open  < open[1]  and open  > close[1]
+             and close < open[1]  and close > close[1]
+             and isDowntrend
+
+plotshape(show1 and yinYinHarami,
+     title="陰の陰はらみ", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.blue, 0),
+     text="陰陰\nはらみ", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 2. 三手大黒線
+//    大陰線が3本連続（売りが尽きたことで底打ち示唆）
+// ============================================================
+santeDaikoku = isBear    and bodySize    > avgBody * 1.2
+             and isBear[1] and bodySize[1] > avgBody * 1.2
+             and isBear[2] and bodySize[2] > avgBody * 1.2
+             and close < close[1] and close[1] < close[2]
+             and isDowntrend
+
+plotshape(show2 and santeDaikoku,
+     title="三手大黒線", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.purple, 0),
+     text="三手\n大黒", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 3. 放れ七手の変化底
+//    5本以上の連続陰線の後、陽線が出現して放れる
+// ============================================================
+c5bear        = isBear[1] and isBear[2] and isBear[3] and isBear[4] and isBear[5]
+hanareNanate  = c5bear and isBull and close > open[1]
+
+plotshape(show3 and hanareNanate,
+     title="放れ七手の変化底", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.teal, 0),
+     text="放七\n変化底", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 4. 最後の抱き線／包み線（底値圏）
+//    前日の陰線を完全に包む大陽線（強気の包み線）
+// ============================================================
+saigoTsutsumiBottom = isBear[1]
+                    and isBull
+                    and open  <= close[1]
+                    and close >= open[1]
+                    and bodySize > bodySize[1]
+                    and isDowntrend
+
+plotshape(show4 and saigoTsutsumiBottom,
+     title="最後の抱き線（底値圏）", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.green, 0),
+     text="抱き線\n底値圏", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 5. 二本の差込線（切り込み線）
+//    陰線の翌日に、陰線の中心を超える陽線が出現
+// ============================================================
+midC1_buy  = (open[1] + close[1]) / 2
+sashikomi  = isBear[1]
+           and isBull
+           and open  < close[1]
+           and close > midC1_buy
+           and close < open[1]
+           and isDowntrend
+
+plotshape(show5 and sashikomi,
+     title="二本の差込線", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.lime, 0),
+     text="差込\n線", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 6. 捨て子線（下げから高値寄り）
+//    陰線 → 窓を開けたコマ/十字線 → 窓を開けた陽線
+// ============================================================
+dojiBodyBottom  = math.abs(close[1] - open[1]) < avgRange * 0.1
+gapDownBottom   = high[1] < low[2]
+gapUpBottom     = low    > high[1]
+sutegoBottom    = isBear[2] and dojiBodyBottom and gapDownBottom and isBull and gapUpBottom
+
+plotshape(show6 and sutegoBottom,
+     title="捨て子線（底値圏）", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.orange, 0),
+     text="捨子\n線底", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 7. 鍋底
+//    複数本でV字・U字の底を形成するパターン
+// ============================================================
+lowestLow5    = ta.lowest(low, 5)
+nabesoko      = low[2] == lowestLow5[2]          // 2本前が5本の最安値
+             and close    > close[1]
+             and close[1] > close[2]
+             and low[3]   > low[2]
+             and low[4]   > low[2]
+
+plotshape(show7 and nabesoko,
+     title="鍋底", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.yellow, 0),
+     text="鍋底", textcolor=color.black, size=size.small)
+
+// ============================================================
+// 8. 放れ五手黒一本底
+//    5本連続陰線の後、長い下ヒゲを持つ陰線（槌子的）が出現
+// ============================================================
+hanareGo = isBear[1] and isBear[2] and isBear[3] and isBear[4] and isBear[5]
+         and lowerShadow  > bodySize * 2.0
+         and upperShadow  < bodySize * 0.5
+         and bodySize > 0
+
+plotshape(show8 and hanareGo,
+     title="放れ五手黒一本底", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.navy, 0),
+     text="放五\n黒底", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 9. 連続下げ三手放れ三ツ星
+//    大陰線 → 小さな陰線（前の値幅内） → さらに小さなコマ
+// ============================================================
+ts_c1   = isBear[2] and bodySize[2] > avgBody * 1.2 and lowerShadow[2] > bodySize[2] * 0.5
+ts_c2   = isBear[1] and bodySize[1] < bodySize[2]   and low[1] >= low[2]  and high[1] <= high[2]
+ts_c3   = bodySize < avgBody * 0.5                  and low >= low[1]
+santsuhoshi = ts_c1 and ts_c2 and ts_c3 and isDowntrend
+
+plotshape(show9 and santsuhoshi,
+     title="連続下げ三手放れ三ツ星", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.aqua, 0),
+     text="三ツ\n星底", textcolor=color.black, size=size.small)
+
+// ============================================================
+// 10. 陰の陽はらみ（強気のはらみ線）
+//     大陰線の中に小陽線がすっぽり収まるパターン
+// ============================================================
+yinYouHarami = isBear[1]
+             and isBull
+             and bodySize[1] > avgBody * 1.0
+             and open  > close[1] and open  < open[1]
+             and close > close[1] and close < open[1]
+             and isDowntrend
+
+plotshape(show10 and yinYouHarami,
+     title="陰の陽はらみ", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.green, 30),
+     text="陰陽\nはらみ", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 11. たくり線（槌子・ハンマー）
+//     実体が短く、長い下ヒゲを持つローソク足
+// ============================================================
+takuri = lowerShadow  > bodySize * 2.0
+       and upperShadow < bodySize * 0.5
+       and bodySize > 0
+       and totalRange  > 0
+       and (math.min(open, close) - low) / totalRange > 0.55
+       and isDowntrend
+
+plotshape(show11 and takuri,
+     title="たくり線", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.red, 0),
+     text="たくり\n線", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 12. 陽線五本
+//     5本連続陽線（上昇加速・強気継続サイン）
+// ============================================================
+yousenGohon = isBull    and close    > open
+            and isBull[1] and close[1] > open[1]
+            and isBull[2] and close[2] > open[2]
+            and isBull[3] and close[3] > open[3]
+            and isBull[4] and close[4] > open[4]
+            and close > close[1] and close[1] > close[2]
+            and close[2] > close[3] and close[3] > close[4]
+
+plotshape(show12 and yousenGohon,
+     title="陽線五本", style=shape.labelup,
+     location=location.belowbar,
+     color=color.new(color.fuchsia, 0),
+     text="陽線\n五本", textcolor=color.white, size=size.small)
+
+// ============================================================
+// 背景色：下降トレンド中に薄い色を付けて視認しやすくする
+// ============================================================
+bgcolor(isDowntrend ? color.new(color.blue, 95) : na, title="下降トレンド背景")
