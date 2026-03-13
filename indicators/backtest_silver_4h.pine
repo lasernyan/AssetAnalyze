@@ -1,0 +1,307 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// © AssetAnalyze
+//@version=5
+strategy("ローソク足パターン バックテスト [XAGUSD 4H]",
+     overlay=true,
+     initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=10,
+     commission_type=strategy.commission.cash_per_contract,
+     commission_value=0.05,   // シルバーは金より流動性が薄く手数料/スプレッドが大きい
+     slippage=3,               // ボラティリティが高くスリッページも大きめ
+     max_labels_count=500)
+
+// ============================================================
+// シルバー（XAGUSD）4H 設計根拠
+// ─────────────────────────────────────────────────────────────
+//  ・ボラティリティ  : 金の2〜3倍 → ATR倍率を広げ、ダマシを避ける
+//  ・モメンタム傾向  : 一方向に動きやすい → 複数バーパターン重視
+//  ・金との連動      : 85〜90%相関・方向同じで振れ幅大 → トレンド強化
+//  ・産業需要比率高  : 景気敏感 → RSIフィルターで過熱時エントリー回避
+//  ・FOMC/NFP注意   : ドル指標に敏感 (毎月第1金曜NFP / FOMC約6週ごと)
+//  ・推奨時間軸      : 4H（1Hはノイズ過多、Dailyはシグナル不足）
+// ============================================================
+
+// ============================================================
+// ヘルパー変数
+// ============================================================
+bodySize    = math.abs(close - open)
+totalRange  = high - low
+upperShadow = high - math.max(open, close)
+lowerShadow = math.min(open, close) - low
+isBull      = close >= open
+isBear      = close < open
+avgBody     = ta.sma(bodySize, 14)
+avgRange    = ta.sma(totalRange, 14)
+// 4H ではEMA50/200でトレンド判定（週足レベルのトレンドを反映）
+ema50       = ta.ema(close, 50)
+ema200      = ta.ema(close, 200)
+isUptrend   = ema50 > ema200
+isDowntrend = ema50 < ema200
+
+// ============================================================
+// グループ名定数
+// ============================================================
+GRP_PRESET  = "━━ プリセット設定 ━━"
+GRP_FILTER  = "━━ フィルター設定 ━━"
+GRP_SRVOL   = "━━ S/R・出来高フィルター ━━"
+GRP_NFP     = "━━ NFP除外フィルター ━━"
+GRP_RISK    = "━━ リスク設定 ━━"
+GRP_BUY     = "━━ 買いパターン（カスタム時のみ有効） ━━"
+GRP_SELL    = "━━ 売りパターン（カスタム時のみ有効） ━━"
+
+// ============================================================
+// プリセット設定
+// ============================================================
+preset = input.string("シルバー推奨", "プリセット",
+     options=["全パターン", "高信頼度（複数バー）", "シルバー推奨", "一本足反転", "はらみ系", "包み線系", "カスタム"],
+     group=GRP_PRESET,
+     tooltip="シルバー4H推奨: 'シルバー推奨'。モメンタム重視の複数バーパターンを厳選。\n全=b1-b12/s1-s12, 高信頼度=b2b3b6b9b12/s2s3s4s8s12, シルバー推奨=b2b3b4b6b9b11b12/s2s3s4s6s8s12")
+
+// ============================================================
+// フィルター設定
+// ============================================================
+useRsiFilter  = input.bool(true,  "RSIフィルター",              group=GRP_FILTER,
+                 tooltip="シルバーは金より過熱・売られ過ぎが大きい。デフォルト閾値は広め(35/65)に設定")
+rsiBuyThresh  = input.int(35,     "RSI 買い閾値（この値未満）",  minval=10, maxval=50, group=GRP_FILTER,
+                 tooltip="シルバー推奨: 35（金の40より厳しく、本当の売られ過ぎを狙う）")
+rsiSellThresh = input.int(65,     "RSI 売り閾値（この値超過）",  minval=50, maxval=90, group=GRP_FILTER,
+                 tooltip="シルバー推奨: 65（金の60より厳しく、本当の買われ過ぎを狙う）")
+rsiLen        = input.int(14,     "RSI 期間",                   minval=2,  maxval=50, group=GRP_FILTER)
+useTrendFilter= input.bool(true,  "トレンドフィルター（EMA50/200）", group=GRP_FILTER,
+                 tooltip="4H足ではEMA50/200で週足レベルのトレンドを確認。シルバーはトレンド追従性が高い")
+
+// ============================================================
+// S/R・出来高フィルター設定
+// ============================================================
+useSRFilter  = input.bool(true,  "S/Rフィルター（サポート/レジスタンス付近のみ）", group=GRP_SRVOL)
+srPivotLen   = input.int(14,    "ピボット検出期間",         minval=3,  maxval=50,  group=GRP_SRVOL,
+                 tooltip="4H足 × ピボット14本 ≈ 約2.3日分。週次の高値/安値を捉えるのに適切")
+srAtrMult    = input.float(1.2, "S/R 許容幅（ATR倍率）",   minval=0.1, step=0.1,  group=GRP_SRVOL,
+                 tooltip="シルバーはボラティリティが高いため許容幅を1.2に広げる（金は1.0）")
+useVolFilter = input.bool(true,  "出来高急増フィルター",    group=GRP_SRVOL,
+                 tooltip="薄い流動性のシルバーでは出来高確認が特に重要。ダマシ排除に必須")
+volLen       = input.int(20,    "出来高 SMA 期間",           minval=5,  maxval=100, group=GRP_SRVOL)
+volMult      = input.float(1.8, "急増判定倍率（平均の N倍）", minval=1.0, step=0.1, group=GRP_SRVOL,
+                 tooltip="シルバー推奨: 1.8倍（金より高めに設定し、機関投資家の本物の動きを確認）")
+
+// ============================================================
+// NFP（非農業部門雇用者数）除外フィルター
+// 毎月第1金曜日 12:30 UTC（日本時間 21:30）発表 → 4H足で発表バーをカバー
+// ============================================================
+useNfpFilter   = input.bool(true,  "NFP発表バー除外（毎月第1金曜 UTC12〜16時）", group=GRP_NFP,
+                  tooltip="毎月第1金曜のNFP（米国雇用統計）発表でシルバーは急変しやすい。発表を含む4Hバーをスキップ")
+nfpDayOfMonth  = input.int(7,      "第1金曜判定（日付 ≤ この値）",              minval=7, maxval=7, group=GRP_NFP,
+                  tooltip="月の第1金曜 = 日付が1〜7日かつ金曜。変更不要")
+
+// 第1金曜 && UTC 12〜15時（4H足発表ウィンドウ）
+isNfpWindow = useNfpFilter and dayofweek == dayofweek.friday and dayofmonth <= nfpDayOfMonth and hour >= 12 and hour < 16
+nfpOk       = not isNfpWindow
+
+// ============================================================
+// リスク設定（シルバーは金の約2〜3倍のボラティリティを前提に設定）
+// ============================================================
+atrLen   = input.int(14,   "ATR 期間",                    minval=1, maxval=50, group=GRP_RISK)
+slMult   = input.float(2.0, "ストップロス（ATR倍率）",    minval=0.5, step=0.5, group=GRP_RISK,
+              tooltip="シルバー4H推奨: 2.0。金より広め。日中ノイズに引っかからないよう余裕を確保")
+tpMult   = input.float(4.0, "テイクプロフィット（ATR倍率）", minval=0.5, step=0.5, group=GRP_RISK,
+              tooltip="シルバー4H推奨: 4.0（R:R = 2.0）。モメンタムが強いため金より伸ばせる")
+
+// ============================================================
+// カスタム用 個別トグル
+// ── シルバー推奨（デフォルト値）の選定根拠 ──────────────────
+//  買い: b2三手大黒、b3放七変化底、b4抱き線底、b6捨子線底、
+//        b9三ツ星底、b11たくり線、b12陽線五本
+//        → モメンタム確認型 + 高信頼度反転型を中心に選択
+//  売り: s2三羽鳥、s3団子天井、s4捨子線天、s6抱き線天、
+//        s8三手放れ、s12陰線五本
+//        → シルバーの急落に対応できる強いモメンタム型を中心に
+//  除外: b5差込線（小幅過ぎ）、b7鍋底・b8放五黒底（バー数多すぎ）、
+//        s7打ち返し（シルバーの速い動きに合わない）、s11波高線（誤検出多）
+// ============================================================
+cb1  = input.bool(false, "①陰陰はらみ",   group=GRP_BUY)
+cb2  = input.bool(true,  "②三手大黒 ★",  group=GRP_BUY,  tooltip="★シルバー推奨: モメンタム確認型の代表。4Hでは特に信頼性が高い")
+cb3  = input.bool(true,  "③放七変化底 ★", group=GRP_BUY, tooltip="★シルバー推奨: 長い下落後の底確認。7本下落の後の反転はシルバーで再現性高い")
+cb4  = input.bool(true,  "④抱き線底 ★",  group=GRP_BUY,  tooltip="★シルバー推奨: 大きな陽線が前の陰線を包む。シルバーの勢いある反転を確認")
+cb5  = input.bool(false, "⑤差込線",       group=GRP_BUY,  tooltip="シルバーの大きな値動きに対して差込線は信号が弱すぎる")
+cb6  = input.bool(true,  "⑥捨子線底 ★",  group=GRP_BUY,  tooltip="★シルバー推奨: モーニングスター相当。ギャップを伴う場合は特に信頼性高")
+cb7  = input.bool(false, "⑦鍋底",         group=GRP_BUY,  tooltip="5本のローカル最安値を必要とし、4Hではシグナルが遅くなりがち")
+cb8  = input.bool(false, "⑧放五黒底",     group=GRP_BUY,  tooltip="5本連続陰線 + たくり線。4H時間軸では遅すぎる")
+cb9  = input.bool(true,  "⑨三ツ星底 ★",  group=GRP_BUY,  tooltip="★シルバー推奨: S/R付近でのもみ合い後の反転。出来高フィルターとの相性が良い")
+cb10 = input.bool(false, "⑩陰陽はらみ",   group=GRP_BUY)
+cb11 = input.bool(true,  "⑪たくり線 ★",  group=GRP_BUY,  tooltip="★シルバー推奨: 長い下ヒゲ。S/Rラインとの組合せで高精度")
+cb12 = input.bool(true,  "⑫陽線五本 ★",  group=GRP_BUY,  tooltip="★シルバー推奨: 5本連続陽線。シルバーのモメンタムトレンド継続の確認に有効")
+
+cs1  = input.bool(false, "①首吊線",       group=GRP_SELL, tooltip="下ヒゲ長い首吊線はシルバーの誤検出が多い")
+cs2  = input.bool(true,  "②三羽鳥 ★",    group=GRP_SELL, tooltip="★シルバー推奨: 三本連続陰線。シルバーの急落トレンド初動を捉える")
+cs3  = input.bool(true,  "③団子天井 ★",  group=GRP_SELL, tooltip="★シルバー推奨: 高信頼度の天井パターン。出来高ピークと合わせると精度UP")
+cs4  = input.bool(true,  "④捨子線天 ★",  group=GRP_SELL, tooltip="★シルバー推奨: イブニングスター相当。ギャップあり版は特に信頼性高")
+cs5  = input.bool(false, "⑤陽陽はらみ",   group=GRP_SELL)
+cs6  = input.bool(true,  "⑥抱き線天 ★",  group=GRP_SELL, tooltip="★シルバー推奨: 大きな陰線が前の陽線を包む。勢いある反転に対応")
+cs7  = input.bool(false, "⑦打ち返し",     group=GRP_SELL, tooltip="シルバーの速い下落では打ち返しのシグナルが出るまでに手遅れになりやすい")
+cs8  = input.bool(true,  "⑧三手放れ ★",  group=GRP_SELL, tooltip="★シルバー推奨: 上昇後の押し込み確認。三手放れは4Hで再現性高い")
+cs9  = input.bool(false, "⑨かぶせ線",     group=GRP_SELL, tooltip="シルバーでは小幅なかぶせ線が多く、誤検出になりやすい")
+cs10 = input.bool(false, "⑩陽陰はらみ",   group=GRP_SELL)
+cs11 = input.bool(false, "⑪波高線",       group=GRP_SELL, tooltip="シルバーは上下ヒゲが大きくなりやすく波高線の誤検出が多い")
+cs12 = input.bool(true,  "⑫陰線五本 ★",  group=GRP_SELL, tooltip="★シルバー推奨: 5本連続陰線。シルバーの強いダウントレンドを確認")
+
+// ============================================================
+// フィルター計算
+// ============================================================
+rsi          = ta.rsi(close, rsiLen)
+atr          = ta.atr(atrLen)
+rsiBuyOk     = not useRsiFilter  or rsi < rsiBuyThresh
+rsiSellOk    = not useRsiFilter  or rsi > rsiSellThresh
+trendBuyOk   = not useTrendFilter or isDowntrend
+trendSellOk  = not useTrendFilter or isUptrend
+
+// ── S/R フィルター ──────────────────────────────────────────
+var float recentPH = na
+var float recentPL = na
+ph = ta.pivothigh(high, srPivotLen, srPivotLen)
+pl = ta.pivotlow(low,  srPivotLen, srPivotLen)
+if not na(ph)
+    recentPH := ph
+if not na(pl)
+    recentPL := pl
+
+srTolerance    = atr * srAtrMult
+nearSupport    = not na(recentPL) and math.abs(close - recentPL) <= srTolerance
+nearResistance = not na(recentPH) and math.abs(close - recentPH) <= srTolerance
+srBuyOk        = not useSRFilter  or nearSupport
+srSellOk       = not useSRFilter  or nearResistance
+
+// ── 出来高急増フィルター ────────────────────────────────────
+avgVol   = ta.sma(volume, volLen)
+volSpike = volume > avgVol * volMult
+volOk    = not useVolFilter or volSpike
+
+// ============================================================
+// 買いパターン検出
+// ============================================================
+b1  = isBear[1] and isBear and bodySize[1] > avgBody and open < open[1] and open > close[1] and close < open[1] and close > close[1] and isDowntrend
+b2  = isBear and isBear[1] and isBear[2] and bodySize > avgBody * 1.2 and bodySize[1] > avgBody * 1.2 and bodySize[2] > avgBody * 1.2 and close < close[1] and close[1] < close[2] and isDowntrend
+b3  = isBear[1] and isBear[2] and isBear[3] and isBear[4] and isBear[5] and isBull and close > open[1]
+b4  = isBear[1] and isBull and open <= close[1] and close >= open[1] and bodySize > bodySize[1] and isDowntrend
+b5m = (open[1] + close[1]) / 2
+b5  = isBear[1] and isBull and open < close[1] and close > b5m and close < open[1] and isDowntrend
+b6d = math.abs(close[1] - open[1]) < avgRange * 0.1
+b6  = isBear[2] and b6d and high[1] < low[2] and isBull and low > high[1]
+b7l = ta.lowest(low, 5)
+b7  = low[2] == b7l[2] and close > close[1] and close[1] > close[2] and low[3] > low[2] and low[4] > low[2]
+b8  = isBear[1] and isBear[2] and isBear[3] and isBear[4] and isBear[5] and lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0
+b9a = isBear[2] and bodySize[2] > avgBody * 1.2 and lowerShadow[2] > bodySize[2] * 0.5
+b9b = isBear[1] and bodySize[1] < bodySize[2] and low[1] >= low[2] and high[1] <= high[2]
+b9  = b9a and b9b and bodySize < avgBody * 0.5 and low >= low[1] and isDowntrend
+b10 = isBear[1] and isBull and bodySize[1] > avgBody and open > close[1] and open < open[1] and close > close[1] and close < open[1] and isDowntrend
+b11 = lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0 and totalRange > 0 and (math.min(open, close) - low) / totalRange > 0.55 and isDowntrend
+b12 = isBull and isBull[1] and isBull[2] and isBull[3] and isBull[4] and close > close[1] and close[1] > close[2] and close[2] > close[3] and close[3] > close[4]
+
+// ============================================================
+// 売りパターン検出
+// ============================================================
+s1  = lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0 and totalRange > 0 and (math.min(open, close) - low) / totalRange > 0.55 and isUptrend
+s2  = isBear and isBear[1] and isBear[2] and open < open[1] and open > close[1] and open[1] < open[2] and open[1] > close[2] and close < close[1] and close[1] < close[2] and bodySize > avgBody * 0.8 and bodySize[1] > avgBody * 0.8 and bodySize[2] > avgBody * 0.8 and isUptrend
+s3d = math.abs(close[1] - open[1]) < avgRange * 0.1
+s3  = isBull[2] and s3d and low[1] > high[2] and isBear and close < (open[2] + close[2]) / 2
+s4d = math.abs(close[1] - open[1]) < avgRange * 0.1
+s4  = isBull[2] and s4d and low[1] > high[2] and isBear and high < low[1]
+s5  = isBull[1] and isBull and bodySize[1] > avgBody and open > open[1] and open < close[1] and close < close[1] and close > open[1] and isUptrend
+s6  = isBull[1] and isBear and open >= close[1] and close <= open[1] and bodySize > bodySize[1] and isUptrend
+s7  = isBull[1] and isBear and math.abs(close - close[1]) < avgRange * 0.08 and bodySize > avgBody * 0.7 and bodySize[1] > avgBody * 0.7 and isUptrend
+s8a = isBull[2] and bodySize[2] > avgBody * 1.2
+s8b = isBear[1] and open[1] < close[2] and open[1] > open[2] and close[1] > open[2] and close[1] < close[2]
+s8  = s8a and s8b and isBear and close < open[2] and isUptrend
+s9m = (open[1] + close[1]) / 2
+s9  = isBull[1] and isBear and open > close[1] and close < s9m and close > open[1] and isUptrend
+s10 = isBull[1] and isBear and bodySize[1] > avgBody and open > open[1] and open < close[1] and close > open[1] and close < close[1] and isUptrend
+s11 = upperShadow > bodySize * 2.0 and lowerShadow > bodySize * 2.0 and bodySize < avgBody * 0.5 and totalRange > avgRange * 1.5 and isUptrend
+s12 = isBear and isBear[1] and isBear[2] and isBear[3] and isBear[4] and close < close[1] and close[1] < close[2] and close[2] < close[3] and close[3] < close[4]
+
+// ============================================================
+// プリセット別 ON/OFF マッピング
+// ============================================================
+isAll    = preset == "全パターン"
+isHigh   = preset == "高信頼度（複数バー）"
+isSilver = preset == "シルバー推奨"
+isSingle = preset == "一本足反転"
+isHarami = preset == "はらみ系"
+isWrap   = preset == "包み線系"
+isCustom = preset == "カスタム"
+
+// 買いパターン有効フラグ
+ub1  = (isAll) or (isHarami) or (isCustom and cb1)
+ub2  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cb2)
+ub3  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cb3)
+ub4  = (isAll) or (isWrap)   or (isSilver) or (isCustom and cb4)
+ub5  = (isAll) or (isCustom and cb5)
+ub6  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cb6)
+ub7  = (isAll) or (isCustom and cb7)
+ub8  = (isAll) or (isSingle) or (isCustom and cb8)
+ub9  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cb9)
+ub10 = (isAll) or (isHarami) or (isCustom and cb10)
+ub11 = (isAll) or (isSingle) or (isSilver) or (isCustom and cb11)
+ub12 = (isAll) or (isHigh)   or (isSilver) or (isCustom and cb12)
+
+// 売りパターン有効フラグ
+us1  = (isAll) or (isSingle) or (isCustom and cs1)
+us2  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cs2)
+us3  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cs3)
+us4  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cs4)
+us5  = (isAll) or (isHarami) or (isCustom and cs5)
+us6  = (isAll) or (isWrap)   or (isSilver) or (isCustom and cs6)
+us7  = (isAll) or (isSingle) or (isCustom and cs7)
+us8  = (isAll) or (isHigh)   or (isSilver) or (isCustom and cs8)
+us9  = (isAll) or (isCustom and cs9)
+us10 = (isAll) or (isHarami) or (isCustom and cs10)
+us11 = (isAll) or (isSingle) or (isCustom and cs11)
+us12 = (isAll) or (isHigh)   or (isSilver) or (isCustom and cs12)
+
+// ============================================================
+// 有効シグナル合成
+// ============================================================
+buySignal = nfpOk and rsiBuyOk and trendBuyOk and srBuyOk and volOk and (
+     (ub1 and b1) or (ub2 and b2) or (ub3 and b3) or (ub4 and b4) or
+     (ub5 and b5) or (ub6 and b6) or (ub7 and b7) or (ub8 and b8) or
+     (ub9 and b9) or (ub10 and b10) or (ub11 and b11) or (ub12 and b12))
+
+sellSignal = nfpOk and rsiSellOk and trendSellOk and srSellOk and volOk and (
+     (us1 and s1) or (us2 and s2) or (us3 and s3) or (us4 and s4) or
+     (us5 and s5) or (us6 and s6) or (us7 and s7) or (us8 and s8) or
+     (us9 and s9) or (us10 and s10) or (us11 and s11) or (us12 and s12))
+
+// ============================================================
+// エントリー / エグジット
+// ============================================================
+if buySignal
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long TP/SL", "Long",
+         stop   = close - atr * slMult,
+         limit  = close + atr * tpMult)
+
+if sellSignal
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short TP/SL", "Short",
+         stop   = close + atr * slMult,
+         limit  = close - atr * tpMult)
+
+// ============================================================
+// チャート表示
+// ============================================================
+plotshape(buySignal,  "買い", shape.triangleup,   location.belowbar, color.new(color.blue,   0), size=size.small)
+plotshape(sellSignal, "売り", shape.triangledown,  location.abovebar, color.new(color.red,    0), size=size.small)
+
+bgcolor(isDowntrend ? color.new(color.blue,   97) : na, title="下降トレンド背景（EMA50<200）")
+bgcolor(isUptrend   ? color.new(color.red,    97) : na, title="上昇トレンド背景（EMA50>200）")
+bgcolor(isNfpWindow ? color.new(color.orange, 80) : na, title="NFP発表除外ウィンドウ")
+
+// EMA ライン（4H専用: 50/200でトレンド判定）
+plot(ema50,  "EMA 50",  color.new(color.orange, 0), 1)
+plot(ema200, "EMA 200", color.new(color.purple,  0), 2)
+
+// S/R ライン表示
+plot(useSRFilter and not na(recentPH) ? recentPH : na, "レジスタンス", color.new(color.red,  40), 1, plot.style_circles)
+plot(useSRFilter and not na(recentPL) ? recentPL : na, "サポート",     color.new(color.blue, 40), 1, plot.style_circles)
+
+// 出来高急増マーカー
+plotshape(useVolFilter and volSpike, "出来高急増", shape.diamond, location.bottom, color.new(color.orange, 0), size=size.tiny)
