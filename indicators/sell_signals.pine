@@ -40,12 +40,12 @@ show12 = input.bool(true,  "12. 陰線五本")
 // 1. 首吊り線（ハンギングマン）
 //    上昇トレンド末期に出る長い下ヒゲ・小実体のローソク足
 // ============================================================
-kubitsuri = lowerShadow  > bodySize * 2.0
-          and upperShadow < bodySize * 0.5
-          and bodySize > 0
-          and totalRange  > 0
-          and (math.min(open, close) - low) / totalRange > 0.55
-          and isUptrend
+kubitsuri = lowerShadow  > bodySize * 2.0 and
+          upperShadow < bodySize * 0.5 and
+          bodySize > 0 and
+          totalRange  > 0 and
+          (math.min(open, close) - low) / totalRange > 0.55 and
+          isUptrend
 
 plotshape(show1 and kubitsuri,
      title="首吊り線", style=shape.labeldown,
@@ -57,14 +57,14 @@ plotshape(show1 and kubitsuri,
 // 2. 三羽鳥（スリーブラッククロウズ）
 //    上昇後に3本連続の大陰線が出現（上昇の終焉）
 // ============================================================
-sanba = isBear    and isBear[1]    and isBear[2]
-      and open     < open[1]  and open     > close[1]   // 前日実体内で始まる
-      and open[1]  < open[2]  and open[1]  > close[2]
-      and close    < close[1] and close[1] < close[2]   // 順に安値更新
-      and bodySize    > avgBody * 0.8
-      and bodySize[1] > avgBody * 0.8
-      and bodySize[2] > avgBody * 0.8
-      and isUptrend
+sanba = isBear    and isBear[1]    and isBear[2] and
+      open     < open[1]  and open     > close[1] and
+      open[1]  < open[2]  and open[1]  > close[2] and
+      close    < close[1] and close[1] < close[2] and
+      bodySize    > avgBody * 0.8 and
+      bodySize[1] > avgBody * 0.8 and
+      bodySize[2] > avgBody * 0.8 and
+      isUptrend
 
 plotshape(show2 and sanba,
      title="三羽鳥", style=shape.labeldown,
@@ -78,11 +78,11 @@ plotshape(show2 and sanba,
 // ============================================================
 dojiBodyTop  = math.abs(close[1] - open[1]) < avgRange * 0.1
 gapUpTop     = low[1] > high[2]
-dangoTop     = isBull[2]
-             and dojiBodyTop
-             and gapUpTop
-             and isBear
-             and close < (open[2] + close[2]) / 2
+dangoTop     = isBull[2] and
+             dojiBodyTop and
+             gapUpTop and
+             isBear and
+             close < (open[2] + close[2]) / 2
 
 plotshape(show3 and dangoTop,
      title="団子天井", style=shape.labeldown,
@@ -109,12 +109,12 @@ plotshape(show4 and sutegoTop,
 // 5. 陽の陽はらみ（天井圏の陽のはらみ線）
 //    大陽線の中に小陽線がすっぽり収まるパターン
 // ============================================================
-youYouHarami = isBull[1]
-             and isBull
-             and bodySize[1] > avgBody * 1.0
-             and open  > open[1]  and open  < close[1]
-             and close < close[1] and close > open[1]
-             and isUptrend
+youYouHarami = isBull[1] and
+             isBull and
+             bodySize[1] > avgBody * 1.0 and
+             open  > open[1]  and open  < close[1] and
+             close < close[1] and close > open[1] and
+             isUptrend
 
 plotshape(show5 and youYouHarami,
      title="陽の陽はらみ", style=shape.labeldown,
@@ -126,12 +126,12 @@ plotshape(show5 and youYouHarami,
 // 6. 最後の抱き線／包み線（天井圏）
 //    前日の陽線を完全に包む大陰線（弱気の包み線）
 // ============================================================
-saigoTsutsumiTop = isBull[1]
-                 and isBear
-                 and open  >= close[1]
-                 and close <= open[1]
-                 and bodySize > bodySize[1]
-                 and isUptrend
+saigoTsutsumiTop = isBull[1] and
+                 isBear and
+                 open  >= close[1] and
+                 close <= open[1] and
+                 bodySize > bodySize[1] and
+                 isUptrend
 
 plotshape(show6 and saigoTsutsumiTop,
      title="最後の抱き線（天井圏）", style=shape.labeldown,
@@ -143,12 +143,12 @@ plotshape(show6 and saigoTsutsumiTop,
 // 7. ツタイの打ち返し（切り返し線・逆撃線）
 //    陽線と陰線が出て終値がほぼ同値（上昇の勢いが失速）
 // ============================================================
-tsutai = isBull[1]
-       and isBear
-       and math.abs(close - close[1]) < avgRange * 0.08
-       and bodySize    > avgBody * 0.7
-       and bodySize[1] > avgBody * 0.7
-       and isUptrend
+tsutai = isBull[1] and
+       isBear and
+       math.abs(close - close[1]) < avgRange * 0.08 and
+       bodySize    > avgBody * 0.7 and
+       bodySize[1] > avgBody * 0.7 and
+       isUptrend
 
 plotshape(show7 and tsutai,
      title="ツタイの打ち返し", style=shape.labeldown,
@@ -161,10 +161,10 @@ plotshape(show7 and tsutai,
 //    大陽線 → 大陽線内に収まる小陰線 → 大陽線を割る大陰線
 // ============================================================
 sante_c1  = isBull[2] and bodySize[2] > avgBody * 1.2
-sante_c2  = isBear[1]
-          and open[1]  < close[2] and open[1]  > open[2]   // 前々日実体内に始まる
-          and close[1] > open[2]  and close[1] < close[2]  // 同実体内に収まる
-sante_c3  = isBear and close < open[2]                     // 大陽線の始値を割り込む
+sante_c2  = isBear[1] and
+          open[1]  < close[2] and open[1]  > open[2] and
+          close[1] > open[2]  and close[1] < close[2]
+sante_c3  = isBear and close < open[2]
 santeHanare = sante_c1 and sante_c2 and sante_c3 and isUptrend
 
 plotshape(show8 and santeHanare,
@@ -178,12 +178,12 @@ plotshape(show8 and santeHanare,
 //    陽線の翌日に、前日高値超えで始まり中心を下回って引ける陰線
 // ============================================================
 midC1_sell  = (open[1] + close[1]) / 2
-darkCloud   = isBull[1]
-            and isBear
-            and open  > close[1]            // 前日終値より高く始まる
-            and close < midC1_sell          // 前日実体中心より安く引ける
-            and close > open[1]             // 前日始値より高い
-            and isUptrend
+darkCloud   = isBull[1] and
+            isBear and
+            open  > close[1] and
+            close < midC1_sell and
+            close > open[1] and
+            isUptrend
 
 plotshape(show9 and darkCloud,
      title="下げ足のかぶせ", style=shape.labeldown,
@@ -195,12 +195,12 @@ plotshape(show9 and darkCloud,
 // 10. 陽の陰はらみ（弱気のはらみ線）
 //     大陽線の中に小陰線がすっぽり収まるパターン
 // ============================================================
-youYinHarami = isBull[1]
-             and isBear
-             and bodySize[1] > avgBody * 1.0
-             and open  > open[1]  and open  < close[1]
-             and close > open[1]  and close < close[1]
-             and isUptrend
+youYinHarami = isBull[1] and
+             isBear and
+             bodySize[1] > avgBody * 1.0 and
+             open  > open[1]  and open  < close[1] and
+             close > open[1]  and close < close[1] and
+             isUptrend
 
 plotshape(show10 and youYinHarami,
      title="陽の陰はらみ", style=shape.labeldown,
@@ -212,11 +212,11 @@ plotshape(show10 and youYinHarami,
 // 11. 波高い線（ハイウェーブキャンドル）
 //     上下ヒゲが長く実体が小さいローソク足（方向性の迷い）
 // ============================================================
-namiTakai = upperShadow > bodySize * 2.0
-          and lowerShadow > bodySize * 2.0
-          and bodySize    < avgBody  * 0.5
-          and totalRange  > avgRange * 1.5
-          and isUptrend
+namiTakai = upperShadow > bodySize * 2.0 and
+          lowerShadow > bodySize * 2.0 and
+          bodySize    < avgBody  * 0.5 and
+          totalRange  > avgRange * 1.5 and
+          isUptrend
 
 plotshape(show11 and namiTakai,
      title="波高い線", style=shape.labeldown,
@@ -228,13 +228,13 @@ plotshape(show11 and namiTakai,
 // 12. 陰線五本
 //     5本連続陰線（下落加速・弱気継続サイン）
 // ============================================================
-insenGohon = isBear    and close    < open
-           and isBear[1] and close[1] < open[1]
-           and isBear[2] and close[2] < open[2]
-           and isBear[3] and close[3] < open[3]
-           and isBear[4] and close[4] < open[4]
-           and close    < close[1] and close[1] < close[2]
-           and close[2] < close[3] and close[3] < close[4]
+insenGohon = isBear    and close    < open and
+           isBear[1] and close[1] < open[1] and
+           isBear[2] and close[2] < open[2] and
+           isBear[3] and close[3] < open[3] and
+           isBear[4] and close[4] < open[4] and
+           close    < close[1] and close[1] < close[2] and
+           close[2] < close[3] and close[3] < close[4]
 
 plotshape(show12 and insenGohon,
      title="陰線五本", style=shape.labeldown,
