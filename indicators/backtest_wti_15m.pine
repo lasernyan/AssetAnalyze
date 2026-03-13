@@ -1,0 +1,253 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// © AssetAnalyze
+//@version=5
+strategy("ローソク足パターン バックテスト [WTI 15M]",
+     overlay=true,
+     initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=10,
+     commission_type=strategy.commission.cash_per_contract,
+     commission_value=0.03,
+     slippage=1,
+     max_labels_count=500)
+
+// ============================================================
+// ヘルパー変数
+// ============================================================
+bodySize    = math.abs(close - open)
+totalRange  = high - low
+upperShadow = high - math.max(open, close)
+lowerShadow = math.min(open, close) - low
+isBull      = close >= open
+isBear      = close < open
+avgBody     = ta.sma(bodySize, 14)
+avgRange    = ta.sma(totalRange, 14)
+ema20       = ta.ema(close, 20)
+ema50       = ta.ema(close, 50)
+isUptrend   = ema20 > ema50
+isDowntrend = ema20 < ema50
+
+// ============================================================
+// プリセット設定
+// ============================================================
+GRP_PRESET  = "━━ プリセット設定 ━━"
+GRP_FILTER  = "━━ フィルター設定 ━━"
+GRP_SRVOL   = "━━ S/R・出来高フィルター ━━"
+GRP_RISK    = "━━ リスク設定 ━━"
+GRP_BUY     = "━━ 買いパターン（カスタム時のみ有効） ━━"
+GRP_SELL    = "━━ 売りパターン（カスタム時のみ有効） ━━"
+
+preset = input.string("全パターン", "プリセット",
+     options=["全パターン", "高信頼度（複数バー）", "一本足反転", "はらみ系", "包み線系", "カスタム"],
+     group=GRP_PRESET,
+     tooltip="全パターン=b1-b12/s1-s12, 高信頼度=b2b3b6b9b12/s2s3s4s8s12, 一本足=b8b11/s1s7s11, はらみ=b1b10/s5s10, 包み=b4/s6, カスタム=下の個別設定")
+
+// ============================================================
+// フィルター設定
+// ============================================================
+useRsiFilter  = input.bool(false,  "RSIフィルター（買い<40 / 売り>60）", group=GRP_FILTER)
+rsiLen        = input.int(14,      "RSI 期間",    minval=2, maxval=50,  group=GRP_FILTER)
+useTrendFilter= input.bool(true,   "トレンドフィルター（EMA20/50）",       group=GRP_FILTER)
+
+// ============================================================
+// S/R・出来高フィルター設定
+// ============================================================
+useSRFilter  = input.bool(false, "S/Rフィルター（サポート/レジスタンス付近のみ）", group=GRP_SRVOL)
+srPivotLen   = input.int(10,    "ピボット検出期間",      minval=3, maxval=50, group=GRP_SRVOL)
+srAtrMult    = input.float(1.0, "S/R 許容幅（ATR倍率）", minval=0.1, step=0.1, group=GRP_SRVOL,
+                 tooltip="エントリー価格がピボット高値/安値からATR×この倍率以内ならS/Rとみなす")
+useVolFilter = input.bool(false, "出来高急増フィルター",   group=GRP_SRVOL)
+volLen       = input.int(20,    "出来高 SMA 期間",        minval=5, maxval=100, group=GRP_SRVOL)
+volMult      = input.float(1.5, "急増判定倍率（平均の N倍）", minval=1.0, step=0.1, group=GRP_SRVOL,
+                 tooltip="volume > SMA(volume,期間) × この倍率 のときのみエントリー")
+
+// ============================================================
+// リスク設定
+// ============================================================
+atrLen   = input.int(14,  "ATR 期間",          minval=1, maxval=50, group=GRP_RISK)
+slMult   = input.float(1.5, "ストップロス（ATR倍率）", minval=0.5, step=0.5, group=GRP_RISK)
+tpMult   = input.float(2.5, "テイクプロフィット（ATR倍率）", minval=0.5, step=0.5, group=GRP_RISK)
+
+// ============================================================
+// カスタム用 個別トグル
+// ============================================================
+cb1  = input.bool(true,  "①陰陰はらみ",   group=GRP_BUY)
+cb2  = input.bool(true,  "②三手大黒",     group=GRP_BUY)
+cb3  = input.bool(true,  "③放七変化底",   group=GRP_BUY)
+cb4  = input.bool(true,  "④抱き線底",     group=GRP_BUY)
+cb5  = input.bool(true,  "⑤差込線",       group=GRP_BUY)
+cb6  = input.bool(true,  "⑥捨子線底",     group=GRP_BUY)
+cb7  = input.bool(true,  "⑦鍋底",         group=GRP_BUY)
+cb8  = input.bool(true,  "⑧放五黒底",     group=GRP_BUY)
+cb9  = input.bool(true,  "⑨三ツ星底",     group=GRP_BUY)
+cb10 = input.bool(true,  "⑩陰陽はらみ",   group=GRP_BUY)
+cb11 = input.bool(true,  "⑪たくり線",     group=GRP_BUY)
+cb12 = input.bool(true,  "⑫陽線五本",     group=GRP_BUY)
+
+cs1  = input.bool(true,  "①首吊線",       group=GRP_SELL)
+cs2  = input.bool(true,  "②三羽鳥",       group=GRP_SELL)
+cs3  = input.bool(true,  "③団子天井",     group=GRP_SELL)
+cs4  = input.bool(true,  "④捨子線天",     group=GRP_SELL)
+cs5  = input.bool(true,  "⑤陽陽はらみ",   group=GRP_SELL)
+cs6  = input.bool(true,  "⑥抱き線天",     group=GRP_SELL)
+cs7  = input.bool(true,  "⑦打ち返し",     group=GRP_SELL)
+cs8  = input.bool(true,  "⑧三手放れ",     group=GRP_SELL)
+cs9  = input.bool(true,  "⑨かぶせ線",     group=GRP_SELL)
+cs10 = input.bool(true,  "⑩陽陰はらみ",   group=GRP_SELL)
+cs11 = input.bool(true,  "⑪波高線",       group=GRP_SELL)
+cs12 = input.bool(true,  "⑫陰線五本",     group=GRP_SELL)
+
+// ============================================================
+// フィルター計算
+// ============================================================
+rsi          = ta.rsi(close, rsiLen)
+atr          = ta.atr(atrLen)
+rsiBuyOk     = not useRsiFilter  or rsi < 40
+rsiSellOk    = not useRsiFilter  or rsi > 60
+trendBuyOk   = not useTrendFilter or isDowntrend
+trendSellOk  = not useTrendFilter or isUptrend
+
+// ── S/R フィルター ──────────────────────────────────────────
+var float recentPH = na
+var float recentPL = na
+ph = ta.pivothigh(high, srPivotLen, srPivotLen)
+pl = ta.pivotlow(low,  srPivotLen, srPivotLen)
+if not na(ph)
+    recentPH := ph
+if not na(pl)
+    recentPL := pl
+
+srTolerance    = atr * srAtrMult
+nearSupport    = not na(recentPL) and math.abs(close - recentPL) <= srTolerance
+nearResistance = not na(recentPH) and math.abs(close - recentPH) <= srTolerance
+srBuyOk        = not useSRFilter  or nearSupport
+srSellOk       = not useSRFilter  or nearResistance
+
+// ── 出来高急増フィルター ────────────────────────────────────
+avgVol    = ta.sma(volume, volLen)
+volSpike  = volume > avgVol * volMult
+volOk     = not useVolFilter or volSpike
+
+// ============================================================
+// 買いパターン検出
+// ============================================================
+b1  = isBear[1] and isBear and bodySize[1] > avgBody and open < open[1] and open > close[1] and close < open[1] and close > close[1] and isDowntrend
+b2  = isBear and isBear[1] and isBear[2] and bodySize > avgBody * 1.2 and bodySize[1] > avgBody * 1.2 and bodySize[2] > avgBody * 1.2 and close < close[1] and close[1] < close[2] and isDowntrend
+b3  = isBear[1] and isBear[2] and isBear[3] and isBear[4] and isBear[5] and isBull and close > open[1]
+b4  = isBear[1] and isBull and open <= close[1] and close >= open[1] and bodySize > bodySize[1] and isDowntrend
+b5m = (open[1] + close[1]) / 2
+b5  = isBear[1] and isBull and open < close[1] and close > b5m and close < open[1] and isDowntrend
+b6d = math.abs(close[1] - open[1]) < avgRange * 0.1
+b6  = isBear[2] and b6d and high[1] < low[2] and isBull and low > high[1]
+b7l = ta.lowest(low, 5)
+b7  = low[2] == b7l[2] and close > close[1] and close[1] > close[2] and low[3] > low[2] and low[4] > low[2]
+b8  = isBear[1] and isBear[2] and isBear[3] and isBear[4] and isBear[5] and lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0
+b9a = isBear[2] and bodySize[2] > avgBody * 1.2 and lowerShadow[2] > bodySize[2] * 0.5
+b9b = isBear[1] and bodySize[1] < bodySize[2] and low[1] >= low[2] and high[1] <= high[2]
+b9  = b9a and b9b and bodySize < avgBody * 0.5 and low >= low[1] and isDowntrend
+b10 = isBear[1] and isBull and bodySize[1] > avgBody and open > close[1] and open < open[1] and close > close[1] and close < open[1] and isDowntrend
+b11 = lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0 and totalRange > 0 and (math.min(open, close) - low) / totalRange > 0.55 and isDowntrend
+b12 = isBull and isBull[1] and isBull[2] and isBull[3] and isBull[4] and close > close[1] and close[1] > close[2] and close[2] > close[3] and close[3] > close[4]
+
+// ============================================================
+// 売りパターン検出
+// ============================================================
+s1  = lowerShadow > bodySize * 2.0 and upperShadow < bodySize * 0.5 and bodySize > 0 and totalRange > 0 and (math.min(open, close) - low) / totalRange > 0.55 and isUptrend
+s2  = isBear and isBear[1] and isBear[2] and open < open[1] and open > close[1] and open[1] < open[2] and open[1] > close[2] and close < close[1] and close[1] < close[2] and bodySize > avgBody * 0.8 and bodySize[1] > avgBody * 0.8 and bodySize[2] > avgBody * 0.8 and isUptrend
+s3d = math.abs(close[1] - open[1]) < avgRange * 0.1
+s3  = isBull[2] and s3d and low[1] > high[2] and isBear and close < (open[2] + close[2]) / 2
+s4d = math.abs(close[1] - open[1]) < avgRange * 0.1
+s4  = isBull[2] and s4d and low[1] > high[2] and isBear and high < low[1]
+s5  = isBull[1] and isBull and bodySize[1] > avgBody and open > open[1] and open < close[1] and close < close[1] and close > open[1] and isUptrend
+s6  = isBull[1] and isBear and open >= close[1] and close <= open[1] and bodySize > bodySize[1] and isUptrend
+s7  = isBull[1] and isBear and math.abs(close - close[1]) < avgRange * 0.08 and bodySize > avgBody * 0.7 and bodySize[1] > avgBody * 0.7 and isUptrend
+s8a = isBull[2] and bodySize[2] > avgBody * 1.2
+s8b = isBear[1] and open[1] < close[2] and open[1] > open[2] and close[1] > open[2] and close[1] < close[2]
+s8  = s8a and s8b and isBear and close < open[2] and isUptrend
+s9m = (open[1] + close[1]) / 2
+s9  = isBull[1] and isBear and open > close[1] and close < s9m and close > open[1] and isUptrend
+s10 = isBull[1] and isBear and bodySize[1] > avgBody and open > open[1] and open < close[1] and close > open[1] and close < close[1] and isUptrend
+s11 = upperShadow > bodySize * 2.0 and lowerShadow > bodySize * 2.0 and bodySize < avgBody * 0.5 and totalRange > avgRange * 1.5 and isUptrend
+s12 = isBear and isBear[1] and isBear[2] and isBear[3] and isBear[4] and close < close[1] and close[1] < close[2] and close[2] < close[3] and close[3] < close[4]
+
+// ============================================================
+// プリセット別 ON/OFF マッピング
+// ============================================================
+isAll    = preset == "全パターン"
+isHigh   = preset == "高信頼度（複数バー）"
+isSingle = preset == "一本足反転"
+isHarami = preset == "はらみ系"
+isWrap   = preset == "包み線系"
+isCustom = preset == "カスタム"
+
+// 買いパターン有効フラグ
+ub1  = (isAll) or (isHarami) or (isCustom and cb1)
+ub2  = (isAll) or (isHigh)   or (isCustom and cb2)
+ub3  = (isAll) or (isHigh)   or (isCustom and cb3)
+ub4  = (isAll) or (isWrap)   or (isCustom and cb4)
+ub5  = (isAll) or (isCustom and cb5)
+ub6  = (isAll) or (isHigh)   or (isCustom and cb6)
+ub7  = (isAll) or (isCustom and cb7)
+ub8  = (isAll) or (isSingle) or (isCustom and cb8)
+ub9  = (isAll) or (isHigh)   or (isCustom and cb9)
+ub10 = (isAll) or (isHarami) or (isCustom and cb10)
+ub11 = (isAll) or (isSingle) or (isCustom and cb11)
+ub12 = (isAll) or (isHigh)   or (isCustom and cb12)
+
+// 売りパターン有効フラグ
+us1  = (isAll) or (isSingle) or (isCustom and cs1)
+us2  = (isAll) or (isHigh)   or (isCustom and cs2)
+us3  = (isAll) or (isHigh)   or (isCustom and cs3)
+us4  = (isAll) or (isHigh)   or (isCustom and cs4)
+us5  = (isAll) or (isHarami) or (isCustom and cs5)
+us6  = (isAll) or (isWrap)   or (isCustom and cs6)
+us7  = (isAll) or (isSingle) or (isCustom and cs7)
+us8  = (isAll) or (isHigh)   or (isCustom and cs8)
+us9  = (isAll) or (isCustom and cs9)
+us10 = (isAll) or (isHarami) or (isCustom and cs10)
+us11 = (isAll) or (isSingle) or (isCustom and cs11)
+us12 = (isAll) or (isHigh)   or (isCustom and cs12)
+
+// ============================================================
+// 有効シグナル合成
+// ============================================================
+buySignal = rsiBuyOk and trendBuyOk and srBuyOk and volOk and (
+     (ub1 and b1) or (ub2 and b2) or (ub3 and b3) or (ub4 and b4) or
+     (ub5 and b5) or (ub6 and b6) or (ub7 and b7) or (ub8 and b8) or
+     (ub9 and b9) or (ub10 and b10) or (ub11 and b11) or (ub12 and b12))
+
+sellSignal = rsiSellOk and trendSellOk and srSellOk and volOk and (
+     (us1 and s1) or (us2 and s2) or (us3 and s3) or (us4 and s4) or
+     (us5 and s5) or (us6 and s6) or (us7 and s7) or (us8 and s8) or
+     (us9 and s9) or (us10 and s10) or (us11 and s11) or (us12 and s12))
+
+// ============================================================
+// エントリー / エグジット
+// ============================================================
+if buySignal
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long TP/SL", "Long",
+         stop   = close - atr * slMult,
+         limit  = close + atr * tpMult)
+
+if sellSignal
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short TP/SL", "Short",
+         stop   = close + atr * slMult,
+         limit  = close - atr * tpMult)
+
+// ============================================================
+// チャート表示
+// ============================================================
+plotshape(buySignal,  "買い", shape.triangleup,   location.belowbar, color.new(color.blue, 0),  size=size.small)
+plotshape(sellSignal, "売り", shape.triangledown,  location.abovebar, color.new(color.red,  0),  size=size.small)
+
+bgcolor(isDowntrend ? color.new(color.blue, 97) : na, title="下降トレンド背景")
+bgcolor(isUptrend   ? color.new(color.red,  97) : na, title="上昇トレンド背景")
+
+// S/R ライン表示
+plot(useSRFilter and not na(recentPH) ? recentPH : na, "レジスタンス", color.new(color.red,   40), 1, plot.style_circles)
+plot(useSRFilter and not na(recentPL) ? recentPL : na, "サポート",     color.new(color.blue,  40), 1, plot.style_circles)
+
+// 出来高急増マーカー
+plotshape(useVolFilter and volSpike, "出来高急増", shape.diamond, location.bottom, color.new(color.orange, 0), size=size.tiny)
